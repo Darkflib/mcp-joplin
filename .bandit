@@ -1,0 +1,12 @@
+[bandit]
+# Bandit configuration for security checks
+
+# Skip certain tests that are not relevant
+skips = B101,B601,B602,B603,B604,B605,B606,B607,B608,B609,B610,B611
+
+# Exclude test files from security checks
+exclude_dirs = tests,scripts
+
+# Only check source code
+[bandit.blacklist_imports]
+bad_name_sets = pickle

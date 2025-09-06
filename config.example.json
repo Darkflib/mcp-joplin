@@ -1,0 +1,17 @@
+{
+    "joplin": {
+        "base_url": "http://localhost:41184",
+        "api_token": "your_joplin_api_token_here",
+        "timeout": 30.0,
+        "max_retries": 3,
+        "retry_delay": 1.0
+    },
+    "rate_limiting": {
+        "requests_per_second": 10,
+        "burst_size": 20
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "json"
+    }
+}

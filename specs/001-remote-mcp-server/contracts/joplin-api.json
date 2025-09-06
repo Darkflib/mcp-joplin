@@ -1,0 +1,200 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Joplin Web Clipper API",
+    "description": "API endpoints used by MCP server to interact with Joplin",
+    "version": "2.x"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:41184",
+      "description": "Default local Joplin instance"
+    }
+  ],
+  "paths": {
+    "/notes": {
+      "get": {
+        "summary": "Search and list notes",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "description": "Search query string",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "description": "Filter by notebook ID",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum results",
+            "schema": {"type": "integer", "minimum": 1, "maximum": 100}
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "API authentication token",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of notes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {"$ref": "#/components/schemas/Note"}
+                    },
+                    "has_more": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing API token"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/notes/{id}": {
+      "get": {
+        "summary": "Get specific note by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Note ID",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "description": "Comma-separated list of fields to include",
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "API authentication token",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Note details",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Note"}
+              }
+            }
+          },
+          "404": {
+            "description": "Note not found"
+          }
+        }
+      }
+    },
+    "/folders": {
+      "get": {
+        "summary": "List notebooks/folders",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "API authentication token",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of notebooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {"$ref": "#/components/schemas/Notebook"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ping": {
+      "get": {
+        "summary": "Health check endpoint",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "API authentication token",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "text/plain": {
+                "schema": {"type": "string", "example": "JoplinClipperServer"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Note": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "body": {"type": "string"},
+          "parent_id": {"type": "string"},
+          "created_time": {"type": "integer"},
+          "updated_time": {"type": "integer"},
+          "is_conflict": {"type": "integer"},
+          "markup_language": {"type": "integer"},
+          "user_created_time": {"type": "integer"},
+          "user_updated_time": {"type": "integer"}
+        },
+        "required": ["id", "title", "parent_id", "created_time", "updated_time"]
+      },
+      "Notebook": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "parent_id": {"type": "string"},
+          "created_time": {"type": "integer"},
+          "updated_time": {"type": "integer"}
+        },
+        "required": ["id", "title", "created_time", "updated_time"]
+      }
+    }
+  }
+}

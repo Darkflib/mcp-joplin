@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(scripts/create-new-feature.sh:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(python -m pytest tests/contract/ -v)",
+      "Bash(find:*)",
+      "Bash(python -m pytest tests/integration/ -v --tb=short)",
+      "Bash(python3 -m pytest tests/integration/ -v --tb=short)",
+      "Bash(python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
