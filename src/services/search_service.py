@@ -84,7 +84,11 @@ class SearchService:
                     },
                 )
                 return SearchResult(
-                    query=query, items=cached_results, total_count=len(cached_results)
+                    query=query,
+                    items=cached_results,
+                    total_count=len(cached_results),
+                    execution_time_ms=0.0,  # Cached results
+                    has_more=False,
                 )
 
             logger.info(
@@ -100,14 +104,20 @@ class SearchService:
 
             if not items:
                 logger.info("No search results found")
-                empty_result = SearchResult(query=query, items=[], total_count=0)
+                empty_result = SearchResult(
+                    query=query,
+                    items=[],
+                    total_count=0,
+                    execution_time_ms=0.0,
+                    has_more=False,
+                )
                 return empty_result
 
             # Score and rank results
             scored_results = []
             for item in items:
                 relevance_score = self._calculate_relevance(query, item)
-                snippet = self._generate_snippet(item.get("body", ""), query)
+                snippet = self._generate_snippet(query, item)
 
                 result_item = SearchResultItem(
                     note_id=item["id"],
@@ -136,7 +146,11 @@ class SearchService:
             )
 
             return SearchResult(
-                query=query, items=final_results, total_count=len(final_results)
+                query=query,
+                items=final_results,
+                total_count=len(final_results),
+                execution_time_ms=0.0,
+                has_more=len(items) > limit,
             )
 
         except Exception as e:

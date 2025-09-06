@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "joplin": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "/Users/mike/miketest/mcp_server.py",
+        "--config-file",
+        "/Users/mike/miketest/config.json"
+      ],
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "/Users/mike/miketest/.venv"
+      }
+    }
+  }
+}

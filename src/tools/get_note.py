@@ -98,19 +98,33 @@ async def get_note_handler(arguments: dict[str, Any]) -> list[types.TextContent]
         raise
     except Exception as e:
         logger.error("Unexpected error in get_note", extra={"error": str(e)})
-        # Check if it's a not found error
+        # Check if it's a not found error - note_id might be unbound if error happened during validation
+        note_id_str = (
+            arguments.get("note_id", "unknown")
+            if "arguments" in locals()
+            else "unknown"
+        )
         if "not found" in str(e).lower() or "404" in str(e):
-            raise Exception(f"Note not found: {note_id}") from e
+            raise Exception(f"Note not found: {note_id_str}") from e
         raise Exception(f"Failed to retrieve note: {str(e)}") from e
 
 
-def _get_joplin_client():
+def _get_joplin_client() -> Any:
     """Get Joplin client instance (placeholder for dependency injection)."""
+    # Try to get real client from server globals first
+    try:
+        from src.server import _global_joplin_client
 
-    # In real implementation, this would be injected via DI container
-    # For now, return a mock that satisfies the interface
+        if _global_joplin_client is not None:
+            return _global_joplin_client
+    except (ImportError, AttributeError):
+        pass
+
+    # Fall back to mock if real client not available
     class MockJoplinClient:
-        async def get_note(self, note_id: str, include_body: bool = True):
+        async def get_note(
+            self, note_id: str, include_body: bool = True
+        ) -> dict[str, Any]:
             # Mock implementation - real would use actual JoplinClient
             if note_id == "nonexistent123456789012345678901234":
                 raise Exception("Note not found")

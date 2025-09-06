@@ -105,7 +105,8 @@ async def get_notes_in_notebook_handler(
             notebook_id=notebook_id, limit=limit, offset=offset
         )
 
-        notes_list = notes_data.get("notes", [])
+        # Handle both real client (uses 'items') and mock client (uses 'notes') formats
+        notes_list = notes_data.get("items", notes_data.get("notes", []))
         total_count = notes_data.get("total_count", len(notes_list))
         has_more = notes_data.get("has_more", False)
 
@@ -142,14 +143,22 @@ async def get_notes_in_notebook_handler(
         raise Exception(f"Failed to get notes in notebook: {str(e)}") from e
 
 
-def _get_joplin_client():
+def _get_joplin_client() -> Any:
     """Get Joplin client instance (placeholder for dependency injection)."""
+    # Try to get real client from server globals first
+    try:
+        from src.server import _global_joplin_client
 
-    # In real implementation, this would be injected via DI container
+        if _global_joplin_client is not None:
+            return _global_joplin_client
+    except (ImportError, AttributeError):
+        pass
+
+    # Fall back to mock if real client not available
     class MockJoplinClient:
         async def get_notes_in_notebook(
             self, notebook_id: str, limit: int = 20, offset: int = 0
-        ):
+        ) -> dict[str, Any]:
             # Mock implementation - real would use actual JoplinClient
             mock_notes = []
 

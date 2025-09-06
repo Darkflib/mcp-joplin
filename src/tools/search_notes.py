@@ -7,7 +7,6 @@ from typing import Any
 from mcp import types
 
 from src.models.mcp_tool import MCPTool
-from src.services.search_service import SearchService
 
 logger = logging.getLogger(__name__)
 
@@ -89,19 +88,27 @@ async def search_notes_handler(arguments: dict[str, Any]) -> list[types.TextCont
         search_service = _get_search_service()
 
         # Perform search
-        search_results = await search_service.search(
+        search_results = await search_service.search_notes(
             query=query, limit=limit, notebook_id=notebook_id
         )
 
+        # Handle both real SearchService (returns SearchResult object) and mock (returns list)
+        if hasattr(search_results, "items"):
+            # Real SearchService returns SearchResult object
+            result_items = search_results.items
+        else:
+            # Mock returns list directly
+            result_items = search_results
+
         # Format results for MCP response
         results_data = []
-        for result in search_results:
+        for result in result_items:
             results_data.append(
                 {
                     "note_id": result.note_id,
                     "title": result.title,
                     "snippet": result.snippet,
-                    "score": result.score,
+                    "score": result.relevance_score,
                 }
             )
 
@@ -125,23 +132,32 @@ async def search_notes_handler(arguments: dict[str, Any]) -> list[types.TextCont
         raise Exception(f"Search failed: {str(e)}") from e
 
 
-def _get_search_service() -> SearchService:
+def _get_search_service() -> Any:
     """Get search service instance (placeholder for dependency injection)."""
+    # Try to get real search service from server globals first
+    try:
+        from src.server import _global_search_service
 
-    # In real implementation, this would be injected via DI container
-    # For now, return a mock that satisfies the interface
+        if _global_search_service is not None:
+            return _global_search_service
+    except (ImportError, AttributeError):
+        pass
+
+    # Fall back to mock if real service not available
     class MockSearchService:
-        async def search(self, query: str, limit: int = 10, notebook_id: str = None):
+        async def search_notes(
+            self, query: str, limit: int = 10, notebook_id: str | None = None
+        ) -> Any:
             # This is a placeholder - real implementation would use actual SearchService
-            from src.models.search_result import MatchType, SearchResult
+            from src.models.search_result import SearchResultItem
 
+            # Return a simple list of search result items for now
             return [
-                SearchResult(
-                    note_id="a1b2c3d4e5f6789012345678901234567890abcd",
+                SearchResultItem(
+                    note_id="a1b2c3d4e5f6789012345678901234ab",  # Fixed to be exactly 32 chars
                     title=f"Mock result for: {query}",
                     snippet=f"This is a mock search result for query '{query}'",
-                    score=0.8,
-                    match_type=MatchType.TITLE,
+                    relevance_score=0.8,
                 )
             ]
 

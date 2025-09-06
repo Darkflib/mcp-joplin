@@ -20,6 +20,10 @@ from src.tools.search_notes import search_notes_tool
 
 logger = logging.getLogger(__name__)
 
+# Global client instance for tools to access
+_global_joplin_client = None
+_global_search_service = None
+
 
 class JoplinMCPServer:
     """Joplin MCP Server with tool registration and connection management."""
@@ -68,6 +72,11 @@ class JoplinMCPServer:
                 connection_manager=self.connection_manager,
                 rate_limiter=self.rate_limiter,
             )
+
+            # Set global references for tools
+            global _global_joplin_client, _global_search_service
+            _global_joplin_client = self.joplin_client
+            _global_search_service = self.search_service
 
             # Register MCP tools
             await self._register_tools()

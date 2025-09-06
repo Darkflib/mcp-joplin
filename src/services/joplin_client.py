@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from src.models.connection import Connection, ConnectionState
+from src.models.connection import Connection
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +74,8 @@ class JoplinClient:
             )
 
             if is_healthy:
-                self.connection.transition_to(ConnectionState.CONNECTED)
                 logger.info("Joplin server ping successful")
             else:
-                self.connection.transition_to(
-                    ConnectionState.ERROR,
-                    f"Ping failed: HTTP {response.status_code}",
-                )
                 logger.error(
                     "Joplin server ping failed",
                     extra={
@@ -92,20 +87,14 @@ class JoplinClient:
             return is_healthy
 
         except httpx.ConnectError as e:
-            error_msg = f"Connection failed: {str(e)}"
-            self.connection.transition_to(ConnectionState.ERROR, error_msg)
             logger.error("Joplin connection failed", extra={"error": str(e)})
             return False
 
         except httpx.TimeoutException as e:
-            error_msg = f"Request timed out: {str(e)}"
-            self.connection.transition_to(ConnectionState.ERROR, error_msg)
             logger.error("Joplin request timed out", extra={"error": str(e)})
             return False
 
         except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            self.connection.transition_to(ConnectionState.ERROR, error_msg)
             logger.error("Unexpected error during ping", extra={"error": str(e)})
             return False
 
@@ -167,7 +156,10 @@ class JoplinClient:
 
             params = {"token": self.connection.api_token}
 
-            if not include_body:
+            # Always include essential timestamp fields
+            if include_body:
+                params["fields"] = "id,title,parent_id,created_time,updated_time,body"
+            else:
                 params["fields"] = "id,title,parent_id,created_time,updated_time"
 
             response = await self.client.get(
