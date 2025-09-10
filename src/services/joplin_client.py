@@ -421,7 +421,7 @@ class JoplinClient:
                 "title": title,
                 "body": body or "",
             }
-            
+
             if parent_id:
                 create_data["parent_id"] = parent_id
 

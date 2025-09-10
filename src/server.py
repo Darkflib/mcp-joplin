@@ -96,7 +96,7 @@ class JoplinMCPServer:
         """Register all MCP tools with the server."""
         joplin_config = self.config.get("joplin", {})
         write_operations_enabled = joplin_config.get("allow_write_operations", False)
-        
+
         # Always include read-only tools
         tools = [
             search_notes_tool,
@@ -104,7 +104,7 @@ class JoplinMCPServer:
             list_notebooks_tool,
             get_notes_in_notebook_tool,
         ]
-        
+
         # Add write tools only if enabled
         if write_operations_enabled:
             tools.extend([
@@ -165,7 +165,7 @@ class JoplinMCPServer:
         """List available MCP tools."""
         joplin_config = self.config.get("joplin", {})
         write_operations_enabled = joplin_config.get("allow_write_operations", False)
-        
+
         # Always include read-only tools
         tools = [
             types.Tool(
@@ -189,7 +189,7 @@ class JoplinMCPServer:
                 inputSchema=get_notes_in_notebook_tool.input_schema,
             ),
         ]
-        
+
         # Add write tools only if enabled
         if write_operations_enabled:
             tools.extend([
@@ -213,7 +213,7 @@ class JoplinMCPServer:
         joplin_config = self.config.get("joplin", {})
         write_operations_enabled = joplin_config.get("allow_write_operations", False)
         tools_count = 4 + (2 if write_operations_enabled else 0)  # 4 read + 2 write tools
-        
+
         info = {
             "name": "joplin-mcp-server",
             "version": "0.1.0",
