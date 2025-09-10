@@ -358,7 +358,100 @@ class JoplinClient:
             logger.error("Batch note retrieval failed", extra={"error": str(e)})
             raise
 
-    def get_performance_stats(self) -> dict[str, Any]:
+    async def update_note(self, note_id: str, title: str = None, body: str = None, parent_id: str = None) -> dict[str, Any]:
+        """Update an existing note's title, body, or parent notebook."""
+        try:
+            logger.info(
+                "Updating note",
+                extra={"note_id": note_id, "has_title": title is not None, "has_body": body is not None, "parent_id": parent_id},
+            )
+
+            # Build the update payload - only include fields that are being updated
+            update_data = {}
+            if title is not None:
+                update_data["title"] = title
+            if body is not None:
+                update_data["body"] = body
+            if parent_id is not None:
+                update_data["parent_id"] = parent_id
+
+            if not update_data:
+                raise ValueError("At least one field (title, body, or parent_id) must be provided for update")
+
+            params = {"token": self.connection.api_token}
+
+            response = await self.client.put(
+                f"{self.connection.base_url}/notes/{note_id}",
+                params=params,
+                json=update_data,
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code == 404:
+                raise Exception(f"Note not found: {note_id}")
+            elif response.status_code == 401:
+                raise Exception("Authentication failed: Invalid API token")
+            elif response.status_code != 200:
+                raise Exception(f"Update note failed: HTTP {response.status_code} - {response.text}")
+
+            result = response.json()
+            logger.info("Note updated successfully", extra={"note_id": note_id})
+            return result
+
+        except httpx.ConnectError as e:
+            logger.error("Connection failed during note update", extra={"error": str(e)})
+            raise Exception(f"Connection failed: {str(e)}") from e
+        except httpx.TimeoutException as e:
+            logger.error("Note update timed out", extra={"error": str(e)})
+            raise Exception(f"Request timed out: {str(e)}") from e
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON response", extra={"error": str(e)})
+            raise Exception(f"Invalid JSON response: {str(e)}") from e
+
+    async def create_note(self, title: str, body: str = "", parent_id: str = None) -> dict[str, Any]:
+        """Create a new note in Joplin."""
+        try:
+            logger.info(
+                "Creating new note",
+                extra={"title": title, "parent_id": parent_id, "body_length": len(body) if body else 0},
+            )
+
+            # Build the create payload
+            create_data = {
+                "title": title,
+                "body": body or "",
+            }
+            
+            if parent_id:
+                create_data["parent_id"] = parent_id
+
+            params = {"token": self.connection.api_token}
+
+            response = await self.client.post(
+                f"{self.connection.base_url}/notes",
+                params=params,
+                json=create_data,
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code == 401:
+                raise Exception("Authentication failed: Invalid API token")
+            elif response.status_code != 200:
+                raise Exception(f"Create note failed: HTTP {response.status_code} - {response.text}")
+
+            result = response.json()
+            logger.info("Note created successfully", extra={"note_id": result.get("id"), "title": title})
+            return result
+
+        except httpx.ConnectError as e:
+            logger.error("Connection failed during note creation", extra={"error": str(e)})
+            raise Exception(f"Connection failed: {str(e)}") from e
+        except httpx.TimeoutException as e:
+            logger.error("Note creation timed out", extra={"error": str(e)})
+            raise Exception(f"Request timed out: {str(e)}") from e
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON response", extra={"error": str(e)})
+            raise Exception(f"Invalid JSON response: {str(e)}") from e
         """Get performance statistics for monitoring."""
         return {
             "total_requests": self._request_count,

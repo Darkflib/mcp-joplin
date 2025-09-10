@@ -13,10 +13,12 @@ from src.services.connection_manager import ConnectionManager
 from src.services.joplin_client import JoplinClient
 from src.services.rate_limiter import RateLimiter
 from src.services.search_service import SearchService
+from src.tools.create_note import create_note_tool
 from src.tools.get_note import get_note_tool
 from src.tools.get_notes_in_notebook import get_notes_in_notebook_tool
 from src.tools.list_notebooks import list_notebooks_tool
 from src.tools.search_notes import search_notes_tool
+from src.tools.update_note import update_note_tool
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +94,26 @@ class JoplinMCPServer:
 
     async def _register_tools(self) -> None:
         """Register all MCP tools with the server."""
+        joplin_config = self.config.get("joplin", {})
+        write_operations_enabled = joplin_config.get("allow_write_operations", False)
+        
+        # Always include read-only tools
         tools = [
             search_notes_tool,
             get_note_tool,
             list_notebooks_tool,
             get_notes_in_notebook_tool,
         ]
+        
+        # Add write tools only if enabled
+        if write_operations_enabled:
+            tools.extend([
+                update_note_tool,
+                create_note_tool,
+            ])
+            logger.info("Write operations enabled - registered write tools")
+        else:
+            logger.info("Write operations disabled - read-only mode active")
 
         for tool in tools:
             # Register tool with MCP server
@@ -147,6 +163,10 @@ class JoplinMCPServer:
 
     async def list_tools(self) -> list[types.Tool]:
         """List available MCP tools."""
+        joplin_config = self.config.get("joplin", {})
+        write_operations_enabled = joplin_config.get("allow_write_operations", False)
+        
+        # Always include read-only tools
         tools = [
             types.Tool(
                 name=search_notes_tool.name,
@@ -169,16 +189,36 @@ class JoplinMCPServer:
                 inputSchema=get_notes_in_notebook_tool.input_schema,
             ),
         ]
+        
+        # Add write tools only if enabled
+        if write_operations_enabled:
+            tools.extend([
+                types.Tool(
+                    name=update_note_tool.name,
+                    description=update_note_tool.description,
+                    inputSchema=update_note_tool.input_schema,
+                ),
+                types.Tool(
+                    name=create_note_tool.name,
+                    description=create_note_tool.description,
+                    inputSchema=create_note_tool.input_schema,
+                ),
+            ])
 
         logger.info("Listed available tools", extra={"tool_count": len(tools)})
         return tools
 
     async def get_server_info(self) -> dict[str, Any]:
         """Get server information and status."""
+        joplin_config = self.config.get("joplin", {})
+        write_operations_enabled = joplin_config.get("allow_write_operations", False)
+        tools_count = 4 + (2 if write_operations_enabled else 0)  # 4 read + 2 write tools
+        
         info = {
             "name": "joplin-mcp-server",
             "version": "0.1.0",
-            "tools_count": 4,
+            "tools_count": tools_count,
+            "write_operations_enabled": write_operations_enabled,
             "connection_status": None,
             "rate_limiter_status": None,
         }

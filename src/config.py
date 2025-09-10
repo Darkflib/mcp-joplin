@@ -76,6 +76,7 @@ class ConfigManager:
                 "rate_limit": 60,
                 "max_retries": 3,
                 "retry_delay": 1.0,
+                "allow_write_operations": False,  # Safe by default - read-only
             },
             "server": {
                 "host": "localhost",
@@ -126,6 +127,8 @@ class ConfigManager:
             joplin_config["rate_limit"] = int(os.getenv("JOPLIN_RATE_LIMIT"))
         if os.getenv("JOPLIN_MAX_RETRIES"):
             joplin_config["max_retries"] = int(os.getenv("JOPLIN_MAX_RETRIES"))
+        if os.getenv("JOPLIN_ALLOW_WRITE_OPERATIONS"):
+            joplin_config["allow_write_operations"] = os.getenv("JOPLIN_ALLOW_WRITE_OPERATIONS").lower() in ("true", "1", "yes", "on")
 
         if joplin_config:
             env_config["joplin"] = joplin_config
