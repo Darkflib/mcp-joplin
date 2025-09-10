@@ -80,6 +80,8 @@ async def main():
                 "get_note": get_note_tool,
                 "list_notebooks": list_notebooks_tool,
                 "get_notes_in_notebook": get_notes_in_notebook_tool,
+                "update_note": update_note_tool,
+                "create_note": create_note_tool,
             }
 
             if name not in tools_map:
@@ -108,10 +110,12 @@ async def main():
                 return ErrorHandler.handle_tool_error(name, e)
 
         # Import tools for the handlers
+        from src.tools.create_note import create_note_tool
         from src.tools.get_note import get_note_tool
         from src.tools.get_notes_in_notebook import get_notes_in_notebook_tool
         from src.tools.list_notebooks import list_notebooks_tool
         from src.tools.search_notes import search_notes_tool
+        from src.tools.update_note import update_note_tool
 
         logger.info("MCP server ready, starting stdio transport")
 
