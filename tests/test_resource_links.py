@@ -81,3 +81,46 @@ def test_regression_old_behaviour_deleted_whole_paragraphs() -> None:
 def test_empty_resource_id_rejected() -> None:
     with pytest.raises(ValueError):
         remove_resource_links("x", "")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            f'<img src="https://example.org/keep.png" data-src=":/{RID}">\n', id="data-src"
+        ),
+        pytest.param(
+            f'<a href="https://x.org" data-href=":/{RID}">keep text</a>\n', id="data-href"
+        ),
+        pytest.param(
+            f'<img alt=\' src=":/{RID}" \' src="keep.png">\n', id="src-inside-other-value"
+        ),
+        pytest.param(f'<abbr href=":/{RID}">x</abbr>\n', id="abbr-is-not-a"),
+    ],
+)
+def test_html_only_matches_real_src_or_href_attributes(body: str) -> None:
+    # Review finding: \bsrc also matched data-src and deleted unrelated embeds.
+    assert remove_resource_links(body, RID) == (body, 0)
+
+
+def test_label_cannot_start_at_an_earlier_bracket_in_prose() -> None:
+    # Review finding: the label could start at the escaped \[ and eat the prose.
+    body = f'Before \\[literal prose ![chart](:/{RID} "title") after.\n'
+    assert remove_resource_links(body, RID) == ("Before \\[literal prose after.\n", 1)
+
+
+def test_nested_brackets_in_label() -> None:
+    body = f"[see [docs] here](:/{RID}) tail\n"
+    assert remove_resource_links(body, RID) == ("tail\n", 1)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        f'Text <img width="2" src=":/{RID}" /> more\n',
+        f"Text <img src=':/{RID}'> more\n",
+    ],
+    ids=["double-quoted-self-closing", "single-quoted"],
+)
+def test_html_img_variants_removed(body: str) -> None:
+    assert remove_resource_links(body, RID) == ("Text more\n", 1)

@@ -16,19 +16,37 @@ from __future__ import annotations
 
 import re
 
+# One HTML attribute: a name, optionally `= value` where a quoted value is
+# consumed whole (so text inside another attribute's quotes can never match).
+_HTML_ATTR = r"""[^\s=>/"']+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+))?"""
+
+# A Markdown link label: escaped characters, anything but brackets, or one level
+# of balanced [nested] brackets (CommonMark allows those). A raw unbalanced `[`
+# is not allowed, so a match can never start at an earlier bracket in the prose.
+_LABEL = r"(?:\\.|[^\[\]\\]|\[(?:\\.|[^\[\]\\])*\])*"
+
 
 def _link_constructs(resource_id: str) -> list[str]:
     rid = re.escape(resource_id)
     # The target must end right after the id: `:/abc` must not match `:/abcdef`.
     target = rf":/{rid}(?![0-9A-Za-z])"
+
+    def html_tag(tag: str, attr: str, *, closing: bool) -> str:
+        # <tag ...attrs... attr=":/id" ...attrs...> where `attr` is a whole
+        # attribute name (data-src is not src).
+        open_tag = (
+            # No back-reference for the quote: this text is embedded in several
+            # alternatives, which would renumber the groups.
+            rf"<{tag}(?:\s+{_HTML_ATTR})*?\s+{attr}\s*=\s*(?:\"{target}\"|'{target}')"
+            rf"(?:\s+{_HTML_ATTR})*\s*/?>"
+        )
+        return open_tag + (rf".*?</{tag}\s*>" if closing else "")
+
     return [
-        # [label](:/id) / ![alt](:/id) / ![alt](:/id "title"). Labels may contain
-        # escaped brackets (\] or \[) but not a raw closing bracket.
-        rf"!?\[(?:\\.|[^\]\\])*\]\(\s*<?{target}>?(?:\s+\"[^\"]*\")?\s*\)",
-        # <img ... src=":/id" ...> (self-closing or not)
-        rf"<img\b[^>]*\bsrc\s*=\s*[\"']{target}[\"'][^>]*>",
-        # <a href=":/id">label</a>
-        rf"<a\b[^>]*\bhref\s*=\s*[\"']{target}[\"'][^>]*>.*?</a\s*>",
+        # [label](:/id) / ![alt](:/id) / ![alt](:/id "title"); not after a `\`.
+        rf"(?<!\\)!?\[{_LABEL}\]\(\s*<?{target}>?(?:\s+\"[^\"]*\")?\s*\)",
+        html_tag("img", "src", closing=False),
+        html_tag("a", "href", closing=True),
     ]
 
 
