@@ -13,6 +13,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from .joplin_client import JoplinClient
 from .models import Folder, FolderNode, Note, PagedResult, Resource, ResourceBlob
+from .redaction import install_log_redaction
 from .settings import Settings
 
 
@@ -61,6 +62,9 @@ def _build_folder_tree(folders: list[dict[str, Any]]) -> list[FolderNode]:
 def create_mcp_server(settings: Settings) -> FastMCP:
     @asynccontextmanager
     async def lifespan(_: FastMCP) -> AsyncIterator[AppContext]:
+        # Runs on every transport, after FastMCP/uvicorn have set up log handlers.
+        # Idempotent, so per-session lifespans (v1 stateless HTTP) are fine.
+        install_log_redaction([settings.joplin_token, settings.mcp_api_key])
         joplin = JoplinClient(
             base_url=str(settings.joplin_base_url),
             token=settings.joplin_token,
