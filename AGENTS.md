@@ -16,6 +16,8 @@ Guidance for coding agents working on this repository.
 - `src/mcp_joplin_streamable_sse/joplin_client.py` - async Joplin API client (JSON/bytes/multipart)
 - `src/mcp_joplin_streamable_sse/models.py` - response/data models
 - `src/mcp_joplin_streamable_sse/settings.py` - environment config
+- `src/mcp_joplin_streamable_sse/__main__.py` - CLI (`serve`/`stdio`/`doctor`)
+- `src/mcp_joplin_streamable_sse/health.py` - cached Joplin readiness probe
 - `src/mcp_joplin_streamable_sse/redaction.py` - token redaction for errors and logs
 
 ## Exposed MCP surface (current)
@@ -38,7 +40,7 @@ Guidance for coding agents working on this repository.
 Required:
 
 - `JOPLIN_TOKEN`
-- `MCP_API_KEY` (at least 12 characters; e.g. `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
+- `MCP_API_KEY` for `serve` only (absent is allowed for `stdio`/`doctor`; at least 12 characters; e.g. `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
 
 Optional/defaulted:
 
@@ -63,7 +65,11 @@ Optional/defaulted:
 
 ## Behavior notes
 
-- `/health` is unauthenticated by design.
+- `/health` (readiness: Joplin reachable + token accepted, cached 15 s, 503 otherwise) and
+  `/health/live` (liveness) are unauthenticated by design and must never return secrets or note
+  data. The sidecar launcher polls `/health` with a 2 s timeout and shows only the status code,
+  so the reason for a state change is logged (`health.py`).
+- CLI: `serve` (default), `stdio`, `doctor`; exit code 2 = configuration error.
 - MCP endpoint requires `X-API-Key`.
 - Attachment content is exchanged as base64 in MCP tools.
 - MCP Python SDK 2.x (`mcp.server.mcpserver.MCPServer`); serves the 2026-07-28 protocol and

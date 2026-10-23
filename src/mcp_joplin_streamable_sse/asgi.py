@@ -12,8 +12,12 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from .health import JoplinHealth
 from .mcp_server import create_mcp_server
 from .settings import Settings
+
+# Health endpoints reveal only coarse status (no URLs, secrets, or Joplin data).
+_UNAUTHENTICATED_PATHS = frozenset({"/health", "/health/live"})
 
 
 class ApiKeyMiddleware:
@@ -31,7 +35,7 @@ class ApiKeyMiddleware:
     def _bypass_auth(path: str) -> bool:
         # Allow unauthenticated health checks and OAuth discovery probes.
         # Some MCP clients probe these endpoints before sending custom headers.
-        return path == "/health" or path.startswith("/.well-known/")
+        return path in _UNAUTHENTICATED_PATHS or path.startswith("/.well-known/")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or self._bypass_auth(scope.get("path", "")):
@@ -50,12 +54,21 @@ class ApiKeyMiddleware:
         await self._app(scope, receive, send)
 
 
-async def health(_: Request) -> Response:
+async def health_ready(request: Request) -> Response:
+    """Readiness: 200 only when Joplin is reachable and accepts the token."""
+    checker: JoplinHealth = request.app.state.joplin_health
+    result = await checker.check()
+    return JSONResponse(result.as_dict(), status_code=200 if result.ok else 503)
+
+
+async def health_live(_: Request) -> Response:
+    """Liveness: the process is up and serving HTTP, whatever Joplin's state."""
     return JSONResponse({"ok": True})
 
 
 def create_app(settings: Settings | None = None) -> Starlette:
     settings = settings or Settings()
+    api_key = settings.require_api_key()
     mcp = create_mcp_server(settings)
 
     # MCP 2.x: transport options live here, not on the MCPServer constructor.
@@ -72,16 +85,24 @@ def create_app(settings: Settings | None = None) -> Starlette:
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         # A mounted sub-app's lifespan never runs, so drive the session manager
         # from here. It only exists once streamable_http_app() has been called.
-        async with mcp.session_manager.run():
-            yield
+        joplin_health = JoplinHealth(
+            base_url=str(settings.joplin_base_url), token=settings.joplin_token
+        )
+        app.state.joplin_health = joplin_health
+        try:
+            async with mcp.session_manager.run():
+                yield
+        finally:
+            await joplin_health.aclose()
 
     app = Starlette(
         routes=[
-            Route("/health", endpoint=health, methods=["GET"]),
+            Route("/health", endpoint=health_ready, methods=["GET"]),
+            Route("/health/live", endpoint=health_live, methods=["GET"]),
             # The MCP sub-app serves its endpoint at /mcp.
             Mount("/", app=mcp_app),
         ],
         lifespan=lifespan,
     )
-    app.add_middleware(ApiKeyMiddleware, api_key=settings.mcp_api_key)
+    app.add_middleware(ApiKeyMiddleware, api_key=api_key)
     return app
