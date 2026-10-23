@@ -83,7 +83,7 @@ All MCP requests must include:
 2. Fill in:
 
    - JOPLIN_TOKEN
-   - MCP_API_KEY
+   - MCP_API_KEY (at least 12 characters, e.g. `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
 3. Install dependencies:
 
    - uv sync --all-extras
