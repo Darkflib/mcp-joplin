@@ -105,3 +105,39 @@ async def test_tool_error_and_logs_have_no_token(
     # ... without the token.
     assert TOKEN not in text
     assert TOKEN not in caplog.text
+
+
+def test_repeat_install_extends_secrets_on_existing_handlers() -> None:
+    handler = logging.StreamHandler()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        install_log_redaction(["first-secret-0123456789"])
+        install_log_redaction(["second-secret-0123456789"])
+        filters = [f for f in handler.filters if isinstance(f, RedactingFilter)]
+        assert len(filters) == 1
+        record = logging.LogRecord(
+            "x",
+            logging.INFO,
+            __file__,
+            1,
+            "%s %s",
+            ("first-secret-0123456789", "second-secret-0123456789"),
+            None,
+        )
+        filters[0].filter(record)
+        assert record.getMessage() == "*** ***"
+    finally:
+        root.removeHandler(handler)
+
+
+@respx.mock
+async def test_caller_supplied_token_in_path_is_redacted() -> None:
+    respx.get(f"{BASE}/notes/x").mock(return_value=httpx.Response(404, text="Not found"))
+    client = JoplinClient(base_url=BASE, token=TOKEN)
+    try:
+        with pytest.raises(JoplinApiError) as excinfo:
+            await client.request_json("GET", f"/notes/x?token={TOKEN}")
+    finally:
+        await client.aclose()
+    assert TOKEN not in str(excinfo.value)

@@ -21,6 +21,8 @@ _TOKEN_PARAM_RE = re.compile(r"(?i)([?&]token=)[^&\s\"'#]+")
 # root level; the redacting filter is a backstop, not the primary control.
 _NOISY_URL_LOGGERS = ("httpx", "httpcore")
 
+_shared_filter: RedactingFilter | None = None
+
 
 def redact(text: str, secrets: Iterable[str] = ()) -> str:
     """Return ``text`` with token query parameters and any literal secrets masked."""
@@ -37,7 +39,13 @@ class RedactingFilter(logging.Filter):
 
     def __init__(self, secrets: Iterable[str] = ()) -> None:
         super().__init__()
-        self._secrets = tuple(s for s in secrets if s)
+        self._secrets: frozenset[str] = frozenset()
+        self.add_secrets(secrets)
+
+    def add_secrets(self, secrets: Iterable[str]) -> None:
+        """Start masking more secrets (e.g. a later server instance's credentials)."""
+        # Rebind rather than mutate: filter() may be iterating on another thread.
+        self._secrets = self._secrets | {s for s in secrets if s}
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
@@ -64,7 +72,16 @@ def install_log_redaction(secrets: Iterable[str] = ()) -> None:
     so the filter goes on handlers. Call this after logging has been configured
     (FastMCP and uvicorn both install handlers of their own).
     """
-    log_filter = RedactingFilter(secrets)
+    # One shared filter per process: a repeat call (another server instance,
+    # possibly with different credentials) extends it rather than being skipped.
+    global _shared_filter
+    secrets = list(secrets)
+    if _shared_filter is None:
+        _shared_filter = RedactingFilter(secrets)
+    else:
+        _shared_filter.add_secrets(secrets)
+    log_filter = _shared_filter
+
     for name in _NOISY_URL_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -74,5 +91,6 @@ def install_log_redaction(secrets: Iterable[str] = ()) -> None:
     )
     for lg in loggers:
         for handler in lg.handlers:
-            if not any(isinstance(f, RedactingFilter) for f in handler.filters):
-                handler.addFilter(log_filter)
+            # Handlers may have been created since the last call; addFilter is
+            # a no-op for a filter already present.
+            handler.addFilter(log_filter)

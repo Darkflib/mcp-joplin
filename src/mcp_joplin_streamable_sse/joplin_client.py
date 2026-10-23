@@ -36,6 +36,8 @@ class JoplinClient:
         """Send a request with the token attached; raise token-free errors on failure."""
         method = method.upper()
         url_path = path if path.startswith("/") else f"/{path}"
+        # The path embeds caller-supplied ids; never echo anything token-like.
+        safe_path = redact(url_path, [self._token])
         q = dict(params or {})
         q["token"] = self._token
 
@@ -46,13 +48,13 @@ class JoplinClient:
         except httpx.HTTPError as exc:
             # `from None`: the httpx exception's context can carry the full URL.
             reason = redact(str(exc) or type(exc).__name__, [self._token])
-            raise JoplinConnectionError(method=method, path=url_path, reason=reason) from None
+            raise JoplinConnectionError(method=method, path=safe_path, reason=reason) from None
 
         if resp.status_code >= 400:
             raise JoplinApiError(
                 status_code=resp.status_code,
                 method=method,
-                path=url_path,
+                path=safe_path,
                 detail=redact((resp.text or "").strip(), [self._token]),
             )
         return resp
