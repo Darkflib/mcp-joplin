@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from starlette.testclient import TestClient
 
 from mcp_joplin_streamable_sse.asgi import create_app
 
 
-def test_requires_api_key(monkeypatch) -> None:
+def test_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JOPLIN_TOKEN", "t")
     monkeypatch.setenv("MCP_API_KEY", "k")
     app = create_app()

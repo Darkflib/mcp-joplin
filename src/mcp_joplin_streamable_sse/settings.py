@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     joplin_token: str = Field(alias="JOPLIN_TOKEN", min_length=1)
     joplin_base_url: AnyHttpUrl = Field(
-        default="http://127.0.0.1:41184",
+        default=AnyHttpUrl("http://127.0.0.1:41184"),
         alias="JOPLIN_BASE_URL",
     )
 

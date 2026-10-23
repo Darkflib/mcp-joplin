@@ -1,4 +1,4 @@
-"""FastMCP server definition (tools + resources)."""
+"""MCPServer definition (tools + resources)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 
 from .joplin_client import JoplinClient
 from .models import Folder, FolderNode, Note, PagedResult, Resource, ResourceBlob
@@ -21,6 +21,10 @@ from .settings import Settings
 class AppContext:
     settings: Settings
     joplin: JoplinClient
+
+
+# Typed tool context: makes ctx.request_context.lifespan_context an AppContext.
+JoplinCtx = Context[AppContext, Any]
 
 
 def _parse_fields(fields: str | None) -> str | None:
@@ -42,10 +46,13 @@ def _paged_result(raw: dict[str, Any], *, page: int, limit: int) -> PagedResult:
     )
 
 
-def _build_folder_tree(folders: list[dict[str, Any]]) -> list[FolderNode]:
+def _build_folder_tree(
+    folders: list[dict[str, Any]], root_id: str | None = None
+) -> list[FolderNode]:
     by_parent: dict[str | None, list[dict[str, Any]]] = {}
     for f in folders:
-        by_parent.setdefault(f.get("parent_id"), []).append(f)
+        # Joplin reports top-level folders with parent_id "" (not null).
+        by_parent.setdefault(f.get("parent_id") or None, []).append(f)
 
     def build(parent_id: str | None) -> list[FolderNode]:
         children = []
@@ -56,14 +63,14 @@ def _build_folder_tree(folders: list[dict[str, Any]]) -> list[FolderNode]:
             children.append(node)
         return children
 
-    return build(None)
+    return build(root_id)
 
 
-def create_mcp_server(settings: Settings) -> FastMCP:
+def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     @asynccontextmanager
-    async def lifespan(_: FastMCP) -> AsyncIterator[AppContext]:
-        # Runs on every transport, after FastMCP/uvicorn have set up log handlers.
-        # Idempotent, so per-session lifespans (v1 stateless HTTP) are fine.
+    async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
+        # Runs once per process on every transport (under streamable HTTP, at
+        # session-manager startup), after MCPServer/uvicorn set up log handlers.
         install_log_redaction([settings.joplin_token, settings.mcp_api_key])
         joplin = JoplinClient(
             base_url=str(settings.joplin_base_url),
@@ -75,23 +82,19 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         finally:
             await joplin.aclose()
 
-    mcp = FastMCP(
+    mcp = MCPServer(
         "Joplin",
         instructions=(
             "Access and manage Joplin notes via the local Joplin Data API (Web Clipper). "
             "Use tools for CRUD operations and resources to load note content."
         ),
         lifespan=lifespan,
-        # Configure Streamable HTTP behavior (FastMCP.streamable_http_app() no longer accepts these
-        # as parameters in newer mcp versions).
-        stateless_http=True,
-        json_response=True,
     )
 
     @mcp.resource("joplin-note://{note_id}")
-    async def read_note_resource(note_id: str, ctx: Context) -> str:
+    async def read_note_resource(note_id: str, ctx: JoplinCtx) -> str:
         """Read a note's Markdown body."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         note = await app.joplin.request_json(
             "GET",
             f"/notes/{note_id}",
@@ -101,21 +104,25 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         body = note.get("body") or ""
         return f"# {title}\n\n{body}"
 
-    @mcp.resource("joplin-folders://tree")
-    async def read_folders_tree_resource(ctx: Context) -> list[FolderNode]:
-        """Return the full folder tree."""
-        app: AppContext = ctx.request_context.lifespan_context
+    # MCP 2.x only injects Context into templated resources, hence the optional
+    # query variable. Plain "joplin-folders://tree" still matches.
+    @mcp.resource("joplin-folders://tree{?root_id}")
+    async def read_folders_tree_resource(
+        ctx: JoplinCtx, root_id: str | None = None
+    ) -> list[FolderNode]:
+        """Return the folder tree, or the subtree below ``root_id`` if given."""
+        app = ctx.request_context.lifespan_context
         raw = await app.joplin.get_paged(
             "/folders", page=1, limit=100, params={"fields": "id,title,parent_id"}
         )
         # Joplin paginates; for folders we fetch up to 100 in one go (good enough for v1).
         folders = list(raw.get("items") or [])
-        return _build_folder_tree(folders)
+        return _build_folder_tree(folders, root_id or None)
 
     @mcp.tool()
-    async def notes_get(note_id: str, ctx: Context) -> Note:
+    async def notes_get(note_id: str, ctx: JoplinCtx) -> Note:
         """Get a single note by id."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         raw = await app.joplin.request_json(
             "GET",
             f"/notes/{note_id}",
@@ -125,14 +132,14 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     @mcp.tool()
     async def notes_list(
-        ctx: Context,
+        ctx: JoplinCtx,
         parent_id: str | None = None,
         page: int = 1,
         limit: int = 20,
         fields: str = "id,title,parent_id,updated_time",
     ) -> PagedResult:
         """List notes (optionally within a folder)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
 
         params: dict[str, Any] = {}
         if parent_id:
@@ -148,11 +155,11 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     async def notes_create(
         title: str,
         body: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         parent_id: str | None = None,
     ) -> Note:
         """Create a new note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         payload: dict[str, Any] = {"title": title, "body": body}
         if parent_id:
             payload["parent_id"] = parent_id
@@ -162,13 +169,13 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     @mcp.tool()
     async def notes_update(
         note_id: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         title: str | None = None,
         body: str | None = None,
         parent_id: str | None = None,
     ) -> Note:
         """Update fields of an existing note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         payload: dict[str, Any] = {}
         if title is not None:
             payload["title"] = title
@@ -180,21 +187,21 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return Note.model_validate(raw)
 
     @mcp.tool()
-    async def notes_delete(note_id: str, ctx: Context) -> dict[str, Any]:
+    async def notes_delete(note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         await app.joplin.request_json("DELETE", f"/notes/{note_id}")
         return {"deleted": True, "id": note_id}
 
     @mcp.tool()
     async def folders_list(
-        ctx: Context,
+        ctx: JoplinCtx,
         page: int = 1,
         limit: int = 50,
         fields: str = "id,title,parent_id",
     ) -> PagedResult:
         """List folders (notebooks)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {}
         parsed_fields = _parse_fields(fields)
         if parsed_fields:
@@ -205,11 +212,11 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     @mcp.tool()
     async def folders_create(
         title: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         parent_id: str | None = None,
     ) -> Folder:
         """Create a new folder (notebook)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         payload: dict[str, Any] = {"title": title}
         if parent_id:
             payload["parent_id"] = parent_id
@@ -219,12 +226,12 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     @mcp.tool()
     async def folders_update(
         folder_id: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         title: str | None = None,
         parent_id: str | None = None,
     ) -> Folder:
         """Update a folder (rename and/or move by changing parent_id)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         payload: dict[str, Any] = {}
         if title is not None:
             payload["title"] = title
@@ -236,16 +243,16 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return Folder.model_validate(raw)
 
     @mcp.tool()
-    async def folders_delete(folder_id: str, ctx: Context) -> dict[str, Any]:
+    async def folders_delete(folder_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a folder (notebook)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         await app.joplin.request_json("DELETE", f"/folders/{folder_id}")
         return {"deleted": True, "id": folder_id}
 
     @mcp.tool()
-    async def folders_tree(ctx: Context) -> list[FolderNode]:
+    async def folders_tree(ctx: JoplinCtx) -> list[FolderNode]:
         """Return the folder tree."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         raw = await app.joplin.get_paged(
             "/folders", page=1, limit=100, params={"fields": "id,title,parent_id"}
         )
@@ -253,13 +260,13 @@ def create_mcp_server(settings: Settings) -> FastMCP:
 
     @mcp.tool()
     async def tags_list(
-        ctx: Context,
+        ctx: JoplinCtx,
         page: int = 1,
         limit: int = 50,
         fields: str = "id,title",
     ) -> PagedResult:
         """List tags."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {}
         parsed_fields = _parse_fields(fields)
         if parsed_fields:
@@ -268,42 +275,42 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return _paged_result(raw, page=page, limit=limit)
 
     @mcp.tool()
-    async def tags_create(title: str, ctx: Context) -> dict[str, Any]:
+    async def tags_create(title: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Create a tag."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         return await app.joplin.request_json("POST", "/tags", json_body={"title": title})
 
     @mcp.tool()
-    async def tags_delete(tag_id: str, ctx: Context) -> dict[str, Any]:
+    async def tags_delete(tag_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a tag."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         await app.joplin.request_json("DELETE", f"/tags/{tag_id}")
         return {"deleted": True, "id": tag_id}
 
     @mcp.tool()
-    async def tags_add_note(tag_id: str, note_id: str, ctx: Context) -> dict[str, Any]:
+    async def tags_add_note(tag_id: str, note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Attach a tag to a note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         # Joplin expects a body with {"id": <note_id>}.
         await app.joplin.request_json("POST", f"/tags/{tag_id}/notes", json_body={"id": note_id})
         return {"tag_id": tag_id, "note_id": note_id, "attached": True}
 
     @mcp.tool()
-    async def tags_remove_note(tag_id: str, note_id: str, ctx: Context) -> dict[str, Any]:
+    async def tags_remove_note(tag_id: str, note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Remove a tag from a note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         await app.joplin.request_json("DELETE", f"/tags/{tag_id}/notes/{note_id}")
         return {"tag_id": tag_id, "note_id": note_id, "attached": False}
 
     @mcp.tool()
     async def resources_list(
-        ctx: Context,
+        ctx: JoplinCtx,
         page: int = 1,
         limit: int = 50,
         fields: str = "id,title,mime,filename,file_extension,size,updated_time",
     ) -> PagedResult:
         """List attachments (resources)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {}
         parsed_fields = _parse_fields(fields)
         if parsed_fields:
@@ -312,9 +319,9 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return _paged_result(raw, page=page, limit=limit)
 
     @mcp.tool()
-    async def resources_get(resource_id: str, ctx: Context) -> Resource:
+    async def resources_get(resource_id: str, ctx: JoplinCtx) -> Resource:
         """Get a single attachment metadata by id."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         raw = await app.joplin.request_json(
             "GET",
             f"/resources/{resource_id}",
@@ -325,9 +332,9 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return Resource.model_validate(raw)
 
     @mcp.tool()
-    async def resources_get_content(resource_id: str, ctx: Context) -> ResourceBlob:
+    async def resources_get_content(resource_id: str, ctx: JoplinCtx) -> ResourceBlob:
         """Get attachment file bytes encoded as base64."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         meta_raw = await app.joplin.request_json(
             "GET",
             f"/resources/{resource_id}",
@@ -346,12 +353,12 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     async def resources_create(
         filename: str,
         data_base64: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         mime: str = "application/octet-stream",
         title: str | None = None,
     ) -> Resource:
         """Create a new attachment (resource) from base64-encoded file bytes."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         try:
             raw_bytes = base64.b64decode(data_base64, validate=True)
         except binascii.Error as exc:
@@ -366,22 +373,22 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         return Resource.model_validate(raw)
 
     @mcp.tool()
-    async def resources_delete(resource_id: str, ctx: Context) -> dict[str, Any]:
+    async def resources_delete(resource_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete an attachment (resource)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         await app.joplin.request_json("DELETE", f"/resources/{resource_id}")
         return {"deleted": True, "id": resource_id}
 
     @mcp.tool()
     async def notes_list_resources(
         note_id: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         page: int = 1,
         limit: int = 50,
         fields: str = "id,title,mime,filename,file_extension,size,updated_time",
     ) -> PagedResult:
         """List attachments linked to a note."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {}
         parsed_fields = _parse_fields(fields)
         if parsed_fields:
@@ -395,12 +402,12 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     async def notes_attach_resource(
         note_id: str,
         resource_id: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         alt_text: str | None = None,
         embed: bool = False,
     ) -> Note:
         """Attach a resource to a note by appending a Markdown resource link."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         note_raw = await app.joplin.request_json(
             "GET",
             f"/notes/{note_id}",
@@ -423,10 +430,10 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     async def notes_detach_resource(
         note_id: str,
         resource_id: str,
-        ctx: Context,
+        ctx: JoplinCtx,
     ) -> Note:
         """Detach a resource from a note by removing Markdown resource links that reference it."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         note_raw = await app.joplin.request_json(
             "GET",
             f"/notes/{note_id}",
@@ -451,14 +458,14 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     @mcp.tool()
     async def search(
         query: str,
-        ctx: Context,
+        ctx: JoplinCtx,
         search_type: str = "note",
         page: int = 1,
         limit: int = 20,
         fields: str = "id,title,parent_id,updated_time",
     ) -> PagedResult:
         """Search Joplin items (default type: note)."""
-        app: AppContext = ctx.request_context.lifespan_context
+        app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {"query": query, "type": search_type}
         parsed_fields = _parse_fields(fields)
         if parsed_fields:

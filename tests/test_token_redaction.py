@@ -8,7 +8,7 @@ import sys
 import httpx
 import pytest
 import respx
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
 
 from mcp_joplin_streamable_sse.errors import JoplinApiError, JoplinConnectionError
 from mcp_joplin_streamable_sse.joplin_client import JoplinClient
@@ -77,9 +77,10 @@ async def test_connection_error_has_no_token() -> None:
     assert excinfo.value.__suppress_context__
 
 
+@pytest.mark.parametrize("mode", ["legacy", "2026-07-28"])
 @respx.mock
 async def test_tool_error_and_logs_have_no_token(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    mode: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setenv("JOPLIN_TOKEN", TOKEN)
     monkeypatch.setenv("MCP_API_KEY", "test-api-key-123456")
@@ -92,13 +93,15 @@ async def test_tool_error_and_logs_have_no_token(
     caplog.set_level(logging.DEBUG)
     install_log_redaction([TOKEN])
 
-    async with create_connected_server_and_client_session(mcp._mcp_server) as session:
-        ok = await session.call_tool("notes_get", {"note_id": "ok"})
-        assert not ok.isError
-        failed = await session.call_tool("notes_get", {"note_id": "abc"})
+    async with Client(mcp, mode=mode) as client:
+        ok = await client.call_tool("notes_get", {"note_id": "ok"})
+        assert not ok.is_error
+        failed = await client.call_tool("notes_get", {"note_id": "abc"})
 
-    assert failed.isError
+    assert failed.is_error
     text = " ".join(getattr(c, "text", "") for c in failed.content)
+    # The Joplin error is surfaced (not an opaque "Error executing tool") ...
     assert "404" in text
+    # ... without the token.
     assert TOKEN not in text
     assert TOKEN not in caplog.text

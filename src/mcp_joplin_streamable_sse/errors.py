@@ -4,13 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mcp.server.mcpserver.exceptions import ResourceError
+
 # Joplin error bodies can be long (stack traces); keep what reaches the model short.
 _MAX_DETAIL_CHARS = 300
 
 
 @dataclass(frozen=True, slots=True)
-class JoplinApiError(RuntimeError):
+class JoplinApiError(ResourceError):
     """Raised when the Joplin Data API returns a non-success response.
+
+    Subclasses the SDK's ``ResourceError`` so MCPServer treats it as an
+    anticipated failure: tools return ``is_error`` with this message and resource
+    reads return it as a protocol error. Any other exception type is reported to
+    the client only as an opaque "Error executing tool".
 
     ``path`` is the request path only. Never store the full request URL here: it
     carries the Joplin token as a query parameter, and this error's message is
@@ -31,8 +38,11 @@ class JoplinApiError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class JoplinConnectionError(RuntimeError):
-    """Raised when the Joplin Data API can't be reached at all (refused, timeout, ...)."""
+class JoplinConnectionError(ResourceError):
+    """Raised when the Joplin Data API can't be reached at all (refused, timeout, ...).
+
+    A ``ResourceError`` for the same reason as ``JoplinApiError``.
+    """
 
     method: str
     path: str

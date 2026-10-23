@@ -17,6 +17,16 @@ tags, search, and attachments.
    - list note resources
    - attach/detach resource links in note bodies
 
+## Protocol support
+
+Built on the MCP Python SDK 2.x. One endpoint serves both:
+
+- **MCP 2026-07-28** clients: stateless single-exchange requests (no `initialize`, no session id).
+- **Earlier protocol versions** (handshake-based, e.g. 2025-11-25): served statelessly with JSON responses.
+
+Clients must address the server as `127.0.0.1:<port>` (with an explicit port): the SDK's DNS
+rebinding protection rejects other `Host` headers with `421`.
+
 ## Runtime endpoints
 
 - MCP endpoint: `http://$MCP_HOST:$MCP_PORT/mcp`
@@ -29,7 +39,7 @@ All MCP requests must include:
 ## Exposed MCP resources
 
 - `joplin-note://{note_id}`
-- `joplin-folders://tree`
+- `joplin-folders://tree{?root_id}` (plain `joplin-folders://tree` for the whole tree; `?root_id=<folder id>` for a subtree)
 
 ## Exposed MCP tools
 
@@ -106,3 +116,5 @@ curl -X DELETE http://localhost:41184/tags/ABCD1234/notes/EFGH789
 - Do not commit .env
 - Rotate JOPLIN_TOKEN if it was ever shared or committed
 - Keep MCP bound to 127.0.0.1 unless you have additional network protections
+- The Joplin token is redacted from tool errors and logs (Joplin only accepts it as a URL
+  query parameter, so request URLs are never logged)
