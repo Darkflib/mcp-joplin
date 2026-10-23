@@ -16,13 +16,14 @@ Guidance for coding agents working on this repository.
 - `src/mcp_joplin_streamable_sse/joplin_client.py` - async Joplin API client (JSON/bytes/multipart)
 - `src/mcp_joplin_streamable_sse/models.py` - response/data models
 - `src/mcp_joplin_streamable_sse/settings.py` - environment config
+- `src/mcp_joplin_streamable_sse/redaction.py` - token redaction for errors and logs
 
 ## Exposed MCP surface (current)
 
 ### Resources
 
 - `joplin-note://{note_id}`
-- `joplin-folders://tree`
+- `joplin-folders://tree{?root_id}` (plain `joplin-folders://tree` for the whole tree; `?root_id=<folder id>` for a subtree)
 
 ### Tools
 
@@ -37,7 +38,7 @@ Guidance for coding agents working on this repository.
 Required:
 
 - `JOPLIN_TOKEN`
-- `MCP_API_KEY`
+- `MCP_API_KEY` (at least 12 characters; e.g. `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
 
 Optional/defaulted:
 
@@ -65,3 +66,9 @@ Optional/defaulted:
 - `/health` is unauthenticated by design.
 - MCP endpoint requires `X-API-Key`.
 - Attachment content is exchanged as base64 in MCP tools.
+- MCP Python SDK 2.x (`mcp.server.mcpserver.MCPServer`); serves the 2026-07-28 protocol and
+  earlier handshake-based versions from the same endpoint. Tests cover both via
+  `Client(..., mode="legacy" | "2026-07-28")`.
+- Joplin failures raise `JoplinApiError`/`JoplinConnectionError` (subclasses of the SDK's
+  `ResourceError`) so their message reaches the client; any other exception is reported only as
+  "Error executing tool". Never put the request URL in an error or log line: it carries the token.

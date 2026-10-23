@@ -7,7 +7,8 @@ from typing import Any
 
 import httpx
 
-from .errors import JoplinApiError
+from .errors import JoplinApiError, JoplinConnectionError
+from .redaction import redact
 
 
 class JoplinClient:
@@ -23,6 +24,61 @@ class JoplinClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        files: Any = None,
+    ) -> httpx.Response:
+        """Send a request with the token attached; raise token-free errors on failure."""
+        method = method.upper()
+        url_path = path if path.startswith("/") else f"/{path}"
+        # The path embeds caller-supplied ids; never echo anything token-like.
+        safe_path = redact(url_path, [self._token])
+        q = dict(params or {})
+        q["token"] = self._token
+
+        try:
+            resp = await self._client.request(
+                method, url_path, params=q, json=json_body, files=files
+            )
+        except httpx.HTTPError as exc:
+            # `from None`: the httpx exception's context can carry the full URL.
+            reason = redact(str(exc) or type(exc).__name__, [self._token])
+            raise JoplinConnectionError(method=method, path=safe_path, reason=reason) from None
+
+        if resp.status_code >= 400:
+            raise JoplinApiError(
+                status_code=resp.status_code,
+                method=method,
+                path=safe_path,
+                detail=redact((resp.text or "").strip(), [self._token]),
+            )
+        return resp
+
+    def _json_object(self, resp: httpx.Response, method: str, path: str) -> dict[str, Any]:
+        # Joplin always returns JSON for API routes.
+        try:
+            data = resp.json()
+        except ValueError:
+            raise JoplinApiError(
+                status_code=resp.status_code,
+                method=method.upper(),
+                path=path,
+                detail="Response was not valid JSON",
+            ) from None
+        if not isinstance(data, dict):
+            raise JoplinApiError(
+                status_code=resp.status_code,
+                method=method.upper(),
+                path=path,
+                detail=f"Unexpected JSON type: {type(data).__name__}",
+            )
+        return data
+
     async def request_json(
         self,
         method: str,
@@ -31,30 +87,8 @@ class JoplinClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        method = method.upper()
-        url_path = path if path.startswith("/") else f"/{path}"
-        q = dict(params or {})
-        q.setdefault("token", self._token)
-
-        resp = await self._client.request(method, url_path, params=q, json=json_body)
-        if resp.status_code >= 400:
-            raise JoplinApiError(
-                status_code=resp.status_code,
-                method=method,
-                url=str(resp.request.url),
-                response_text=(resp.text or "").strip(),
-            )
-
-        # Joplin always returns JSON for API routes.
-        data = resp.json()
-        if not isinstance(data, dict):
-            raise JoplinApiError(
-                status_code=resp.status_code,
-                method=method,
-                url=str(resp.request.url),
-                response_text=f"Unexpected JSON type: {type(data).__name__}",
-            )
-        return data
+        resp = await self._send(method, path, params=params, json_body=json_body)
+        return self._json_object(resp, method, path)
 
     async def get_paged(
         self,
@@ -75,19 +109,7 @@ class JoplinClient:
         *,
         params: dict[str, Any] | None = None,
     ) -> tuple[bytes, dict[str, str]]:
-        method = method.upper()
-        url_path = path if path.startswith("/") else f"/{path}"
-        q = dict(params or {})
-        q.setdefault("token", self._token)
-
-        resp = await self._client.request(method, url_path, params=q)
-        if resp.status_code >= 400:
-            raise JoplinApiError(
-                status_code=resp.status_code,
-                method=method,
-                url=str(resp.request.url),
-                response_text=(resp.text or "").strip(),
-            )
+        resp = await self._send(method, path, params=params)
         return resp.content, dict(resp.headers)
 
     async def create_resource(
@@ -103,21 +125,5 @@ class JoplinClient:
             "data": (filename, data, mime),
             "props": (None, json.dumps({"title": title or filename})),
         }
-        resp = await self._client.post("/resources", params={"token": self._token}, files=files)
-        if resp.status_code >= 400:
-            raise JoplinApiError(
-                status_code=resp.status_code,
-                method="POST",
-                url=str(resp.request.url),
-                response_text=(resp.text or "").strip(),
-            )
-
-        data_json = resp.json()
-        if not isinstance(data_json, dict):
-            raise JoplinApiError(
-                status_code=resp.status_code,
-                method="POST",
-                url=str(resp.request.url),
-                response_text=f"Unexpected JSON type: {type(data_json).__name__}",
-            )
-        return data_json
+        resp = await self._send("POST", "/resources", files=files)
+        return self._json_object(resp, "POST", "/resources")
