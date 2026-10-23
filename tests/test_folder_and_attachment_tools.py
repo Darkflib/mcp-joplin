@@ -10,7 +10,7 @@ import pytest
 import respx
 from mcp import Client
 
-from mcp_joplin_streamable_sse.errors import CollectionTooLargeError
+from mcp_joplin_streamable_sse.errors import CollectionTooLargeError, JoplinApiError
 from mcp_joplin_streamable_sse.joplin_client import JoplinClient
 from mcp_joplin_streamable_sse.mcp_server import create_mcp_server
 from mcp_joplin_streamable_sse.settings import Settings
@@ -84,6 +84,21 @@ async def test_get_all_refuses_runaway_collections() -> None:
             await client.get_all("/folders", max_items=250)
     finally:
         await client.aclose()
+
+
+@respx.mock
+async def test_get_all_stops_on_empty_page_claiming_more() -> None:
+    # Review finding: an empty page never hits the item cap, so it would loop.
+    route = respx.get(f"{JOPLIN}/folders").mock(
+        return_value=httpx.Response(200, json={"items": [], "has_more": True})
+    )
+    client = JoplinClient(base_url=JOPLIN, token="joplin-token-0123456789")
+    try:
+        with pytest.raises(JoplinApiError, match="empty but reported has_more"):
+            await client.get_all("/folders")
+    finally:
+        await client.aclose()
+    assert route.call_count == 1
 
 
 def note(body: str) -> dict[str, Any]:

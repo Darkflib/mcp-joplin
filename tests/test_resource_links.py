@@ -124,3 +124,27 @@ def test_nested_brackets_in_label() -> None:
 )
 def test_html_img_variants_removed(body: str) -> None:
     assert remove_resource_links(body, RID) == ("Text more\n", 1)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        f'<img data-src=":/{RID}" src=":/{OTHER}">\n',
+        f'<a data-href=":/{RID}" href=":/{OTHER}">x</a>\n',
+    ],
+    ids=["img", "anchor"],
+)
+def test_data_attribute_for_target_with_real_attribute_elsewhere_kept(body: str) -> None:
+    # Review finding: the element really points at OTHER; detaching RID must keep it.
+    assert remove_resource_links(body, RID) == (body, 0)
+
+
+def test_trailing_blank_lines_kept_when_dropped_link_was_mid_note() -> None:
+    # Review finding: only a dropped *trailing* link should normalise the tail.
+    body = f"a\n![x](:/{RID})\nb\n\n\n"
+    assert remove_resource_links(body, RID) == ("a\nb\n\n\n", 1)
+
+
+def test_trailing_blank_lines_normalised_when_dropped_link_was_last() -> None:
+    body = f"a\n\n![x](:/{RID})\n\n"
+    assert remove_resource_links(body, RID) == ("a\n", 1)

@@ -117,18 +117,28 @@ class JoplinClient:
         """Fetch every page of a paginated collection (Joplin caps ``limit`` at 100).
 
         Raises ``CollectionTooLargeError`` rather than silently truncating if the
-        collection exceeds ``max_items``, which also stops a server that keeps
-        reporting ``has_more`` from looping forever.
+        collection exceeds ``max_items``, and ``JoplinApiError`` on an empty page
+        that still reports ``has_more``; together these guarantee termination.
         """
         items: list[dict[str, Any]] = []
         page = 1
         while True:
             raw = await self.get_paged(path, page=page, limit=PAGE_SIZE, params=params)
-            items.extend(raw.get("items") or [])
+            page_items = raw.get("items") or []
+            items.extend(page_items)
             if len(items) > max_items:
                 raise CollectionTooLargeError(path=path, max_items=max_items)
             if not raw.get("has_more"):
                 return items
+            if not page_items:
+                # An empty page that still claims more would never reach the
+                # item cap, so it would loop forever. Joplin doesn't do this.
+                raise JoplinApiError(
+                    status_code=200,
+                    method="GET",
+                    path=path,
+                    detail=f"page {page} was empty but reported has_more; stopping",
+                )
             page += 1
 
     async def request_bytes(

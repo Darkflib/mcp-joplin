@@ -98,7 +98,9 @@ def remove_resource_links(body: str, resource_id: str) -> tuple[str, int]:
     patterns = _patterns(resource_id)
     ref_def = _reference_definition(resource_id)
     removed = 0
-    dropped_line = False
+    # Whether the last non-blank line of the body was dropped: only then is a
+    # blank-line tail left behind by the removal (rather than the author's own).
+    last_content_dropped = False
     out: list[str] = []
 
     # keepends=True preserves each line's own terminator (\n, \r\n) and whether
@@ -109,7 +111,7 @@ def remove_resource_links(body: str, resource_id: str) -> tuple[str, int]:
 
         if ref_def.match(content):
             removed += 1
-            dropped_line = True
+            last_content_dropped = True
             continue
 
         new_content = content
@@ -119,17 +121,20 @@ def remove_resource_links(body: str, resource_id: str) -> tuple[str, int]:
 
         if new_content == content:
             out.append(line)
+            if content.strip():
+                last_content_dropped = False
         elif new_content.strip() and not _EMPTY_MARKER_LINE.match(new_content):
             # Prose remained on the line; keep it as-is.
             out.append(new_content + ending)
+            last_content_dropped = False
         else:
             # The line held nothing but the link(s) (and perhaps a bullet); drop it.
-            dropped_line = True
+            last_content_dropped = True
 
     if removed == 0:
         return body, 0
     result = "".join(out)
-    if dropped_line:
+    if last_content_dropped:
         # A dropped trailing link (attach appends one after a blank line) would
         # otherwise leave blank lines at the end; keep a single final newline.
         stripped = result.rstrip("\r\n")
