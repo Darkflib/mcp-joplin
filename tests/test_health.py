@@ -15,8 +15,10 @@ BASE = "http://127.0.0.1:41184"
 TOKEN = "SECRET-joplin-token-0123456789"
 
 
-def make(*, ttl_seconds: float = 15.0) -> JoplinHealth:
-    return JoplinHealth(base_url=BASE, token=TOKEN, ttl_seconds=ttl_seconds)
+def make(*, ttl_seconds: float = 15.0, timeout_seconds: float = 1.5) -> JoplinHealth:
+    return JoplinHealth(
+        base_url=BASE, token=TOKEN, ttl_seconds=ttl_seconds, timeout_seconds=timeout_seconds
+    )
 
 
 def mock_ping_ok() -> respx.Route:
@@ -135,3 +137,47 @@ async def test_transitions_logged_once_each(caplog: pytest.LogCaptureFixture) ->
     assert caplog.records[0].levelno == logging.WARNING
     assert "token accepted" in messages[1]
     assert TOKEN not in caplog.text
+
+
+@respx.mock
+async def test_whole_probe_bounded_by_one_deadline() -> None:
+    # Each request alone fits the budget; together they don't.
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.15)
+        if request.url.path == "/ping":
+            return httpx.Response(200, text="JoplinClipService")
+        return httpx.Response(200, json={"items": []})
+
+    respx.get(f"{BASE}/ping").mock(side_effect=slow)
+    respx.get(f"{BASE}/folders").mock(side_effect=slow)
+    checker = make(timeout_seconds=0.25)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    try:
+        result = await checker.check()
+    finally:
+        await checker.aclose()
+    assert loop.time() - started < 0.3
+    assert result.joplin == "unreachable"
+    assert "did not answer within 0.25s" in result.detail
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(302, headers={"Location": "/login"}),
+        httpx.Response(204),
+        httpx.Response(200, text="<html>login</html>"),
+    ],
+    ids=["redirect", "no-content", "html"],
+)
+@respx.mock
+async def test_non_json_200_or_redirect_is_not_ok(response: httpx.Response) -> None:
+    mock_ping_ok()
+    respx.get(f"{BASE}/folders").mock(return_value=response)
+    checker = make()
+    try:
+        result = await checker.check()
+    finally:
+        await checker.aclose()
+    assert result.joplin == "error"

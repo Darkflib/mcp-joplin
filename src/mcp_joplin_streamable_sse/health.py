@@ -56,6 +56,9 @@ class JoplinHealth:
         timeout_seconds: float = 1.5,
         log_transitions: bool = True,
     ) -> None:
+        # timeout_seconds bounds the whole probe (both requests), not each one:
+        # the default stays under the launcher's 2 s health-check timeout.
+        self._timeout = timeout_seconds
         self._token = token
         self._log_transitions = log_transitions
         self._ttl = ttl_seconds
@@ -83,7 +86,15 @@ class JoplinHealth:
                 and time.monotonic() - cached.checked_at < self._ttl
             ):
                 return cached
-            result = await self._probe()
+            try:
+                async with asyncio.timeout(self._timeout):
+                    result = await self._probe()
+            except TimeoutError:
+                result = HealthResult(
+                    "unreachable",
+                    f"Joplin Data API did not answer within {self._timeout:g}s",
+                    time.monotonic(),
+                )
             if self._log_transitions:
                 self._log_transition(cached, result)
             self._cached = result
@@ -112,8 +123,15 @@ class JoplinHealth:
 
         if resp.status_code in (401, 403):
             return HealthResult("unauthorized", "Joplin rejected the API token (JOPLIN_TOKEN)", now)
-        if resp.status_code >= 400:
+        if resp.status_code != 200:
+            # Includes redirects (e.g. a proxy's login page): not proof the token works.
             return HealthResult("error", f"Joplin returned HTTP {resp.status_code}", now)
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            return HealthResult("error", "Joplin returned a non-JSON response for /folders", now)
         return HealthResult("ok", "Joplin reachable and token accepted", now)
 
     @staticmethod
