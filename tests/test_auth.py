@@ -12,7 +12,7 @@ def test_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
     with TestClient(app) as client:
         # Health checks are intentionally unauthenticated.
-        r = client.get("/health")
+        r = client.get("/health/live")
         assert r.status_code == 200
         assert r.json() == {"ok": True}
 

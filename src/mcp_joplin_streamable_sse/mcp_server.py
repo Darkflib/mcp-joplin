@@ -71,7 +71,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
         # Runs once per process on every transport (under streamable HTTP, at
         # session-manager startup), after MCPServer/uvicorn set up log handlers.
-        install_log_redaction([settings.joplin_token, settings.mcp_api_key])
+        install_log_redaction(settings.secrets())
         joplin = JoplinClient(
             base_url=str(settings.joplin_base_url),
             token=settings.joplin_token,

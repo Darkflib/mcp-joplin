@@ -26,9 +26,13 @@ class Settings(BaseSettings):
         alias="JOPLIN_BASE_URL",
     )
 
+    # Required for HTTP serving (see require_api_key); unused over stdio, where
+    # the client launches the process and there is no network surface.
     # Anything shorter is guessable, and secrets under 8 characters are also
     # exempt from log redaction (see redaction.redact).
-    mcp_api_key: str = Field(alias="MCP_API_KEY", min_length=MIN_API_KEY_LENGTH)
+    mcp_api_key: str | None = Field(
+        default=None, alias="MCP_API_KEY", min_length=MIN_API_KEY_LENGTH
+    )
     mcp_host: str = Field(default="127.0.0.1", alias="MCP_HOST")
     mcp_port: int = Field(default=5005, alias="MCP_PORT", ge=1, le=65535)
 
@@ -37,3 +41,21 @@ class Settings(BaseSettings):
         alias="HTTP_TIMEOUT_SECONDS",
         gt=0,
     )
+
+    def require_api_key(self) -> str:
+        """Return the API key, or raise if HTTP serving was asked for without one."""
+        if not self.mcp_api_key:
+            raise ConfigError(
+                "MCP_API_KEY is not set. It is required for the HTTP server "
+                f"(at least {MIN_API_KEY_LENGTH} characters). Generate one with: "
+                "python3 -c 'import secrets; print(secrets.token_urlsafe(32))'"
+            )
+        return self.mcp_api_key
+
+    def secrets(self) -> list[str]:
+        """Every configured credential, for log redaction."""
+        return [s for s in (self.joplin_token, self.mcp_api_key) if s]
+
+
+class ConfigError(RuntimeError):
+    """Configuration is invalid for the requested mode."""
