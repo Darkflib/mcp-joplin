@@ -53,3 +53,16 @@ class JoplinConnectionError(ResourceError):
             f"Could not reach the Joplin Data API for {self.method} {self.path} ({self.reason}). "
             "Is Joplin running with the Web Clipper service enabled?"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionTooLargeError(ResourceError):
+    """A collection was too large to load in full (see ``JoplinClient.get_all``)."""
+
+    path: str
+    max_items: int
+
+    def __str__(self) -> str:
+        return (
+            f"{self.path} has more than {self.max_items} items; refusing to load them all at once"
+        )
