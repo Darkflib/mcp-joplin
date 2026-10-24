@@ -335,15 +335,16 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         """Append Markdown `text` to the end of a note, leaving existing text untouched.
 
         `separator` goes between the existing body and the new text (default: a blank
-        line). Trailing whitespace on the existing body is trimmed first.
+        line). Trailing line endings on the existing body are trimmed first; anything
+        else, including trailing spaces (a Markdown hard line break), is kept.
         """
         if not text:
             raise ToolError("Nothing to append: `text` is empty")
         app = ctx.request_context.lifespan_context
         note_raw = await get_note(app, note_id)
         _check_not_stale(note_raw, expected_updated_time)
-        body = (note_raw.get("body") or "").rstrip()
-        new_body = f"{body}{separator}{text}" if body else text
+        body = (note_raw.get("body") or "").rstrip("\r\n")
+        new_body = f"{body}{separator}{text}" if body.strip() else text
         if not new_body.endswith("\n"):
             new_body += "\n"
         return Note.model_validate(await put_note_body(app, note_id, new_body))
@@ -628,6 +629,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         note_id: str,
         resource_id: str,
         ctx: JoplinCtx,
+        expected_updated_time: ExpectedUpdatedTime = None,
     ) -> NoteDetachResult:
         """Remove the links and embeds that reference an attachment from a note.
 
@@ -644,6 +646,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         if not removed:
             # Don't write: a no-op PUT would still bump updated_time and re-sync.
             return NoteDetachResult.model_validate({**note_raw, "links_removed": 0})
+        _check_not_stale(note_raw, expected_updated_time)
         updated_raw = await put_note_body(app, note_id, updated_body)
         return NoteDetachResult.model_validate({**updated_raw, "links_removed": removed})
 

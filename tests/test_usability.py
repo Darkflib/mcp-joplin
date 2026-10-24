@@ -136,7 +136,8 @@ async def test_append_adds_to_end_without_touching_existing_text(
     async with Client(create_mcp_server(settings), mode=mode) as client:
         result = await client.call_tool("notes_append", {"note_id": "n1", "text": "- new item"})
     assert not result.is_error
-    assert fake.body == "First para.\n\nSecond para.\n\n- new item\n"
+    # Only the trailing newlines go; the hard line break (two spaces) is kept.
+    assert fake.body == "First para.\n\nSecond para.  \n\n- new item\n"
 
 
 @respx.mock
@@ -306,3 +307,32 @@ async def test_valid_fields_are_deduplicated_and_passed_through(settings: Settin
         result = await client.call_tool("notes_list", {"fields": "id, title,id"})
     assert not result.is_error
     assert route.calls.last.request.url.params["fields"] == "id,title"
+
+
+@respx.mock
+async def test_append_to_whitespace_only_note_has_no_leading_separator(
+    settings: Settings,
+) -> None:
+    fake = FakeNote("  \n\n")
+    async with Client(create_mcp_server(settings)) as client:
+        await client.call_tool("notes_append", {"note_id": "n1", "text": "hello"})
+    assert fake.body == "hello\n"
+
+
+@respx.mock
+async def test_detach_refuses_stale_edit_only_when_it_would_write(settings: Settings) -> None:
+    rid = "0123456789abcdef0123456789abcdef"
+    fake = FakeNote(f"keep\n\n![x](:/{rid})\n", updated_time=50)
+    async with Client(create_mcp_server(settings)) as client:
+        stale = await client.call_tool(
+            "notes_detach_resource",
+            {"note_id": "n1", "resource_id": rid, "expected_updated_time": 49},
+        )
+        assert stale.is_error and "changed since you read it" in text_of(stale)
+        assert fake.puts == []
+        fresh = await client.call_tool(
+            "notes_detach_resource",
+            {"note_id": "n1", "resource_id": rid, "expected_updated_time": 50},
+        )
+    assert not fresh.is_error
+    assert fake.body == "keep\n"

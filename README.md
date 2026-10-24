@@ -62,9 +62,11 @@ clients can auto-approve reads and ask before destructive calls.
    - `notes_update`: rename, move, or replace the *whole* body
    - `notes_delete`
 
-`notes_update`, `notes_append` and `notes_replace_text` accept an optional
-`expected_updated_time` (from your last read). If the note changed since then, the edit is
-refused instead of overwriting the other change.
+`notes_update`, `notes_append`, `notes_replace_text` and `notes_detach_resource` accept an
+optional `expected_updated_time` (from your last read). If the note changed since then, the
+edit is refused instead of overwriting the other change. This is best-effort: Joplin has no
+conditional write, so a change landing between the server's read and its write can still be
+overwritten.
 - Folders:
    - `folders_list`
    - `folders_tree`
