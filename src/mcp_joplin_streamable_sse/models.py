@@ -30,6 +30,12 @@ class NoteDetachResult(Note):
     links_removed: int = 0
 
 
+class NoteEditResult(Note):
+    """The note after a text replacement, plus how many occurrences were replaced."""
+
+    replacements: int
+
+
 class Folder(BaseModel):
     id: str
     title: str | None = None

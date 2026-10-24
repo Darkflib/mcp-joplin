@@ -15,7 +15,7 @@ from mcp_joplin_streamable_sse.settings import Settings
 JOPLIN = "http://127.0.0.1:41184"
 MODES = ["legacy", "2026-07-28"]
 
-# Tool names as documented in README/AGENTS.md before the port.
+# Tool names as documented in README/AGENTS.md (all pre-port tools must remain).
 EXPECTED_TOOLS = {
     "notes_get",
     "notes_list",
@@ -41,6 +41,9 @@ EXPECTED_TOOLS = {
     "notes_attach_resource",
     "notes_detach_resource",
     "search",
+    # Added with the safer-editing tools.
+    "notes_append",
+    "notes_replace_text",
 }
 
 FOLDERS = {

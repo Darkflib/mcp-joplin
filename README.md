@@ -49,12 +49,24 @@ All MCP requests must include:
 
 ## Exposed MCP tools
 
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`), so
+clients can auto-approve reads and ask before destructive calls.
+
 - Notes:
    - `notes_get`
    - `notes_list`
    - `notes_create`
-   - `notes_update`
+   - `notes_append`: add text to the end of a note without touching the rest
+   - `notes_replace_text`: replace exact text; refused unless it matches exactly
+     `expected_count` times (default 1)
+   - `notes_update`: rename, move, or replace the *whole* body
    - `notes_delete`
+
+`notes_update`, `notes_append`, `notes_replace_text` and `notes_detach_resource` accept an
+optional `expected_updated_time` (from your last read). If the note changed since then, the
+edit is refused instead of overwriting the other change. This is best-effort: Joplin has no
+conditional write, so a change landing between the server's read and its write can still be
+overwritten.
 - Folders:
    - `folders_list`
    - `folders_tree`
@@ -191,9 +203,19 @@ curl --data '{ "title": "My note", "body": "Some note in **Markdown**"}' http://
 curl -X DELETE http://localhost:41184/tags/ABCD1234/notes/EFGH789
 ```
 
+## Read-only mode
+
+Set `MCP_READ_ONLY=true` to register only the tools that read the notebook (get, list, tree,
+search, attachment metadata/content). Tools that create, edit or delete are not offered at all,
+so they don't appear in `tools/list`. Resources are unaffected. The default is `false`.
+
+Under the sidecar launcher, add it to the entry's `env`:
+`"env": { "MCP_READ_ONLY": "true", ... }`.
+
 ## Security
 
 - Do not commit .env
+- Use `MCP_READ_ONLY=true` for clients that only need to read
 - Rotate JOPLIN_TOKEN if it was ever shared or committed
 - Keep MCP bound to 127.0.0.1 unless you have additional network protections
 - The Joplin token is redacted from tool errors and logs (Joplin only accepts it as a URL
