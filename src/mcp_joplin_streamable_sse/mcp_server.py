@@ -12,8 +12,17 @@ from typing import Any
 from mcp.server.mcpserver import Context, MCPServer
 
 from .joplin_client import JoplinClient
-from .models import Folder, FolderNode, Note, PagedResult, Resource, ResourceBlob
+from .models import (
+    Folder,
+    FolderNode,
+    Note,
+    NoteDetachResult,
+    PagedResult,
+    Resource,
+    ResourceBlob,
+)
 from .redaction import install_log_redaction
+from .resource_links import remove_resource_links
 from .settings import Settings
 
 
@@ -44,6 +53,12 @@ def _paged_result(raw: dict[str, Any], *, page: int, limit: int) -> PagedResult:
         has_more=has_more,
         next_page=(page + 1 if has_more else None),
     )
+
+
+def _escape_link_label(label: str) -> str:
+    """Make arbitrary text safe as a Markdown link label (and removable by detach)."""
+    flat = " ".join(label.split())  # no newlines inside a link label
+    return flat.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def _build_folder_tree(
@@ -112,11 +127,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     ) -> list[FolderNode]:
         """Return the folder tree, or the subtree below ``root_id`` if given."""
         app = ctx.request_context.lifespan_context
-        raw = await app.joplin.get_paged(
-            "/folders", page=1, limit=100, params={"fields": "id,title,parent_id"}
-        )
-        # Joplin paginates; for folders we fetch up to 100 in one go (good enough for v1).
-        folders = list(raw.get("items") or [])
+        folders = await app.joplin.get_all("/folders", params={"fields": "id,title,parent_id"})
         return _build_folder_tree(folders, root_id or None)
 
     @mcp.tool()
@@ -253,10 +264,8 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def folders_tree(ctx: JoplinCtx) -> list[FolderNode]:
         """Return the folder tree."""
         app = ctx.request_context.lifespan_context
-        raw = await app.joplin.get_paged(
-            "/folders", page=1, limit=100, params={"fields": "id,title,parent_id"}
-        )
-        return _build_folder_tree(list(raw.get("items") or []))
+        folders = await app.joplin.get_all("/folders", params={"fields": "id,title,parent_id"})
+        return _build_folder_tree(folders)
 
     @mcp.tool()
     async def tags_list(
@@ -414,7 +423,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
             params={"fields": "id,title,body,parent_id,created_time,updated_time"},
         )
         body = note_raw.get("body") or ""
-        display = alt_text or resource_id
+        display = _escape_link_label(alt_text or resource_id)
         snippet = f"![{display}](:/{resource_id})" if embed else f"[{display}](:/{resource_id})"
         if snippet not in body:
             body = f"{body.rstrip()}\n\n{snippet}\n"
@@ -431,8 +440,15 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         note_id: str,
         resource_id: str,
         ctx: JoplinCtx,
-    ) -> Note:
-        """Detach a resource from a note by removing Markdown resource links that reference it."""
+    ) -> NoteDetachResult:
+        """Detach a resource from a note by removing the links and embeds that reference it.
+
+        Removes Markdown links/images (``[x](:/id)``, ``![x](:/id)``), reference
+        definitions (``[ref]: :/id``) and HTML ``<img>``/``<a>`` embeds pointing at the
+        resource. Other text on the same line is kept. The resource itself is not
+        deleted (use ``resources_delete``). If nothing references it, the note is left
+        untouched and ``links_removed`` is 0.
+        """
         app = ctx.request_context.lifespan_context
         note_raw = await app.joplin.request_json(
             "GET",
@@ -440,20 +456,17 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
             params={"fields": "id,title,body,parent_id,created_time,updated_time"},
         )
         body = note_raw.get("body") or ""
-        filtered_lines: list[str] = []
-        needle = f"(:/{resource_id})"
-        for line in body.splitlines():
-            if needle in line:
-                continue
-            filtered_lines.append(line)
-        updated_body = "\n".join(filtered_lines).rstrip() + "\n"
+        updated_body, removed = remove_resource_links(body, resource_id)
+        if not removed:
+            # Don't write: a no-op PUT would still bump updated_time and re-sync.
+            return NoteDetachResult.model_validate({**note_raw, "links_removed": 0})
 
         updated_raw = await app.joplin.request_json(
             "PUT",
             f"/notes/{note_id}",
             json_body={"body": updated_body},
         )
-        return Note.model_validate(updated_raw)
+        return NoteDetachResult.model_validate({**updated_raw, "links_removed": removed})
 
     @mcp.tool()
     async def search(

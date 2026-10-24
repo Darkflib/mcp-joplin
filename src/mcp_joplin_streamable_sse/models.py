@@ -24,6 +24,12 @@ class Note(BaseModel):
     updated_time: int | None = None
 
 
+class NoteDetachResult(Note):
+    """The note after detaching, plus how many references were removed (0 = untouched)."""
+
+    links_removed: int = 0
+
+
 class Folder(BaseModel):
     id: str
     title: str | None = None

@@ -18,6 +18,7 @@ Guidance for coding agents working on this repository.
 - `src/mcp_joplin_streamable_sse/settings.py` - environment config
 - `src/mcp_joplin_streamable_sse/__main__.py` - CLI (`serve`/`stdio`/`doctor`)
 - `src/mcp_joplin_streamable_sse/health.py` - cached Joplin readiness probe
+- `src/mcp_joplin_streamable_sse/resource_links.py` - remove resource references from note bodies
 - `src/mcp_joplin_streamable_sse/redaction.py` - token redaction for errors and logs
 
 ## Exposed MCP surface (current)
@@ -70,6 +71,13 @@ Optional/defaulted:
   data. The sidecar launcher polls `/health` with a 2 s timeout and shows only the status code,
   so the reason for a state change is logged (`health.py`).
 - CLI: `serve` (default), `stdio`, `doctor`; exit code 2 = configuration error.
+- Collections that a tool needs in full (e.g. the folder tree) go through
+  `JoplinClient.get_all`, which follows `has_more` and raises `CollectionTooLargeError`
+  past 10,000 items instead of truncating. Never fetch a single page and assume it is everything.
+- `notes_detach_resource` edits note bodies via `resource_links.remove_resource_links`: it
+  removes only the link/embed constructs (keeping surrounding prose, indentation and hard line
+  breaks) and does not write the note when nothing matched. Keep `notes_attach_resource`'s
+  label escaping in step with what that module can match.
 - MCP endpoint requires `X-API-Key`.
 - Attachment content is exchanged as base64 in MCP tools.
 - MCP Python SDK 2.x (`mcp.server.mcpserver.MCPServer`); serves the 2026-07-28 protocol and
