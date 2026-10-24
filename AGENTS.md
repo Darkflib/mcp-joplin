@@ -27,13 +27,14 @@ Guidance for coding agents working on this repository.
 
 - `joplin-note://{note_id}`
 - `joplin-folders://tree{?root_id}` (plain `joplin-folders://tree` for the whole tree; `?root_id=<folder id>` for a subtree)
+- `joplin-resource://{resource_id}` (attachment bytes with a per-attachment MIME type)
 
 ### Tools
 
 - Notes: `notes_get`, `notes_list`, `notes_create`, `notes_append`, `notes_replace_text`, `notes_update`, `notes_delete`
 - Folders: `folders_list`, `folders_tree`, `folders_create`, `folders_update`, `folders_delete`
 - Tags: `tags_list`, `tags_create`, `tags_delete`, `tags_add_note`, `tags_remove_note`
-- Resources: `resources_list`, `resources_get`, `resources_get_content`, `resources_create`, `resources_delete`, `notes_list_resources`, `notes_attach_resource`, `notes_detach_resource`
+- Resources: `resources_list`, `resources_get`, `resources_read`, `resources_get_content`, `resources_create`, `resources_delete`, `notes_list_resources`, `notes_attach_resource`, `notes_detach_resource`
 - Search: `search`
 
 ## Environment variables
@@ -49,7 +50,10 @@ Optional/defaulted:
 - `MCP_HOST` (default `127.0.0.1`)
 - `MCP_PORT` (default `5005`)
 - `HTTP_TIMEOUT_SECONDS` (default `15.0`)
-- `MCP_READ_ONLY` (default `false`): register only read tools
+- `MCP_READ_ONLY` (default `false`): register only read tools. Possible future default-on
+  is documented in the README; don't flip it without a major version.
+- `MCP_MAX_ATTACHMENT_BYTES` (default `10485760`): cap for `resources_read` / `joplin-resource://`
+- `MCP_EVENTS_POLL_SECONDS` (default `5`; `0` = off; otherwise at least `0.5`)
 
 ## Local dev workflow
 
@@ -96,3 +100,17 @@ Optional/defaulted:
 - Joplin failures raise `JoplinApiError`/`JoplinConnectionError` (subclasses of the SDK's
   `ResourceError`) so their message reaches the client; any other exception is reported only as
   "Error executing tool". Never put the request URL in an error or log line: it carries the token.
+- Attachment bytes for the binary paths go through `JoplinClient.download(max_bytes=...)`,
+  which streams and stops at the cap. `resources_get_content` deliberately keeps the old
+  uncapped `request_bytes` path and JSON shape for compatibility.
+- `joplin-resource://` returns `TypedBytes`; `_use_typed_bytes_template` swaps in a template
+  subclass so each read carries the attachment's MIME type (the SDK fixes it per template).
+  It touches SDK internals; `tests/test_attachments.py` pins the result.
+- The note-change feed (`events.py`) runs in the MCP lifespan: `NoteEventPoller` follows
+  Joplin's `/events` cursor only while `ListenerTrackingBus` has listeners, and publishes
+  `ResourceUpdated("joplin-note://<id>")`. It must never raise out of `run()`.
+- Our error types are frozen dataclasses: raise them *outside* `async with`/`with` blocks
+  that may re-raise (contextlib assigns `__traceback__`, which fails on a frozen instance and
+  turns the error into an opaque one). See `JoplinClient.download`.
+- httpx2's `ASGITransport` buffers whole responses, so SSE (`subscriptions/listen`) can't be
+  tested through it; `test_http_transport.py` uses a real uvicorn socket for that.

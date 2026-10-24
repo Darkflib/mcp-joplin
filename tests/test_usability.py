@@ -25,6 +25,7 @@ READ_TOOLS = {
     "resources_list",
     "resources_get",
     "resources_get_content",
+    "resources_read",
     "notes_list_resources",
     "search",
 }
@@ -121,6 +122,7 @@ async def test_read_only_mode_keeps_resources(monkeypatch: pytest.MonkeyPatch) -
     assert {t.uri_template for t in templates.resource_templates} == {
         "joplin-note://{note_id}",
         "joplin-folders://tree{?root_id}",
+        "joplin-resource://{resource_id}",
     }
 
 

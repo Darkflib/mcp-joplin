@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
 import httpx
 import httpx2
 import pytest
 import respx
+import uvicorn
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server.subscriptions import ResourceUpdated
 from starlette.applications import Starlette
 
 from mcp_joplin_streamable_sse.asgi import create_app
@@ -151,3 +156,72 @@ async def test_loopback_host_without_port_is_rejected(app: Starlette) -> None:
             headers={"Host": "localhost"},
         )
         assert r.status_code == 421
+
+
+@respx.mock
+async def test_note_change_feed_over_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """subscriptions/listen streams as SSE even though the app is json_response.
+
+    Uses a real socket: httpx2's ASGITransport buffers whole responses, so a
+    listen stream would never deliver its ack through it.
+    """
+    monkeypatch.setenv("JOPLIN_TOKEN", "joplin-token-0123456789")
+    monkeypatch.setenv("MCP_API_KEY", API_KEY)
+    monkeypatch.setenv("MCP_EVENTS_POLL_SECONDS", "0.5")
+    app = create_app(Settings(_env_file=None))
+
+    def feed(request: httpx.Request) -> httpx.Response:
+        if "cursor" not in request.url.params:
+            return httpx.Response(200, json={"cursor": "10"})
+        return httpx.Response(
+            200,
+            json={
+                "items": [{"item_type": 1, "item_id": "n1", "type": 2}],
+                "has_more": False,
+                "cursor": "11",
+            },
+        )
+
+    # respx patches httpx (the Joplin client), not httpx2 (the MCP client).
+    respx.get(f"{JOPLIN}/events").mock(side_effect=feed)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", ws="none")
+    server = uvicorn.Server(config)
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(server.serve)
+        try:
+            with anyio.fail_after(10):
+                while not server.started:
+                    await anyio.sleep(0.02)
+                async with httpx2.AsyncClient(headers={"X-API-Key": API_KEY}) as hc:
+                    transport = streamable_http_client(
+                        f"http://127.0.0.1:{port}/mcp", http_client=hc
+                    )
+                    async with Client(transport, mode="2026-07-28") as client:
+                        async with client.listen(
+                            resource_subscriptions=["joplin-note://n1"]
+                        ) as sub:
+                            async for got in sub:
+                                received = got
+                                break
+        finally:
+            server.should_exit = True
+    assert received == ResourceUpdated(uri="joplin-note://n1")
+
+
+@respx.mock
+async def test_binary_attachment_over_http(app: Starlette) -> None:
+    rid = "0123456789abcdef0123456789abcdef"
+    png = b"\x89PNG\r\n\x1a\n\x00\x01"
+    respx.get(f"{JOPLIN}/resources/{rid}").mock(
+        return_value=httpx.Response(200, json={"id": rid, "mime": "image/png", "size": len(png)})
+    )
+    respx.get(f"{JOPLIN}/resources/{rid}/file").mock(return_value=httpx.Response(200, content=png))
+    async with running(app), http_client(app, {"X-API-Key": API_KEY}) as hc:
+        transport = streamable_http_client(f"{SERVER}/mcp", http_client=hc)
+        async with Client(transport, mode="2026-07-28") as client:
+            result = await client.read_resource(f"joplin-resource://{rid}")
+    assert result.contents[0].mime_type == "image/png"
+    assert base64.b64decode(result.contents[0].blob) == png  # type: ignore[union-attr]

@@ -16,6 +16,8 @@ tags, search, and attachments.
    - list/get/create/delete resources
    - list note resources
    - attach/detach resource links in note bodies
+   - read attachments as native content (images, audio, text, files)
+- Live note-change notifications for MCP 2026-07-28 clients (`subscriptions/listen`)
 
 ## Protocol support
 
@@ -46,6 +48,37 @@ All MCP requests must include:
 
 - `joplin-note://{note_id}`
 - `joplin-folders://tree{?root_id}` (plain `joplin-folders://tree` for the whole tree; `?root_id=<folder id>` for a subtree)
+- `joplin-resource://{resource_id}`: an attachment's bytes, served with its own MIME type
+  (falls back to `application/octet-stream`). Subject to `MCP_MAX_ATTACHMENT_BYTES`.
+
+## Attachments
+
+`resources_read` returns an attachment in the form a model can use directly: PNG, JPEG, GIF
+and WebP as images, `audio/*` as audio, text files (`text/*`, JSON, XML, YAML, SVG) as text,
+and anything else as an embedded file, alongside a one-line summary (name, type, size).
+
+It and `joplin-resource://` refuse attachments larger than `MCP_MAX_ATTACHMENT_BYTES`
+(default 10 MiB): first from Joplin's recorded size, without downloading, then by counting
+the download itself in case that size is wrong.
+
+`resources_get_content` is unchanged (base64 inside JSON, no size cap) so existing callers
+keep working; new callers should prefer `resources_read`.
+
+## Note-change notifications
+
+MCP 2026-07-28 clients can open a `subscriptions/listen` stream and subscribe to
+`joplin-note://{note_id}` URIs; they receive `notifications/resources/updated` when that note
+is created, edited or deleted, from Joplin or anywhere else.
+
+Joplin has no push API, so the server follows Joplin's `/events` change log every
+`MCP_EVENTS_POLL_SECONDS` (default 5; `0` turns it off) — but only while at least one listen
+stream is open, so an idle server makes no extra Joplin requests. Changes are de-duplicated per
+poll. Delivery is best-effort with no replay, as the protocol specifies: a client that
+reconnects should re-read what it cares about. Polling backs off (up to 60 s) while Joplin is
+unreachable and logs only when it starts failing and when it recovers.
+
+Clients on earlier protocol versions have no listen stream and receive no notifications; they
+keep reading notes on demand as before.
 
 ## Exposed MCP tools
 
@@ -82,7 +115,8 @@ overwritten.
 - Resources (attachments):
    - `resources_list`
    - `resources_get`
-   - `resources_get_content`
+   - `resources_read`: the attachment as native image/audio/text/file content
+   - `resources_get_content`: base64 in JSON (kept for compatibility)
    - `resources_create`
    - `resources_delete`
    - `notes_list_resources`
@@ -208,6 +242,11 @@ curl -X DELETE http://localhost:41184/tags/ABCD1234/notes/EFGH789
 Set `MCP_READ_ONLY=true` to register only the tools that read the notebook (get, list, tree,
 search, attachment metadata/content). Tools that create, edit or delete are not offered at all,
 so they don't appear in `tools/list`. Resources are unaffected. The default is `false`.
+
+Planned change: a future major release may make read-only the default, so that writing has to
+be switched on deliberately. It stays off for now because flipping it would silently remove
+tools from existing deployments; set `MCP_READ_ONLY` explicitly if you want either behaviour
+to survive that change.
 
 Under the sidecar launcher, add it to the entry's `env`:
 `"env": { "MCP_READ_ONLY": "true", ... }`.

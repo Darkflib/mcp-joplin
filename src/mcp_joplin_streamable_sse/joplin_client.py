@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 
-from .errors import CollectionTooLargeError, JoplinApiError, JoplinConnectionError
+from .errors import (
+    AttachmentTooLargeError,
+    CollectionTooLargeError,
+    JoplinApiError,
+    JoplinConnectionError,
+)
 from .redaction import redact
 
 # Joplin's maximum page size for list endpoints.
@@ -150,6 +155,48 @@ class JoplinClient:
     ) -> tuple[bytes, dict[str, str]]:
         resp = await self._send(method, path, params=params)
         return resp.content, dict(resp.headers)
+
+    async def download(self, path: str, *, max_bytes: int) -> bytes:
+        """GET a file body, refusing (without buffering it all) anything over ``max_bytes``.
+
+        Checks ``Content-Length`` up front when Joplin sends one, and counts the
+        streamed bytes regardless, since the header can be absent or wrong.
+        """
+        url_path = path if path.startswith("/") else f"/{path}"
+        safe_path = redact(url_path, [self._token])
+        # Our errors are frozen dataclasses, which can't be raised *through* a
+        # context manager (contextlib assigns __traceback__), so they're built
+        # inside the stream block and raised once it has closed.
+        error: Exception | None = None
+        buf = bytearray()
+        try:
+            async with self._client.stream("GET", url_path, params={"token": self._token}) as resp:
+                declared = resp.headers.get("content-length", "")
+                if resp.status_code >= 400:
+                    await resp.aread()
+                    error = JoplinApiError(
+                        status_code=resp.status_code,
+                        method="GET",
+                        path=safe_path,
+                        detail=redact((resp.text or "").strip(), [self._token]),
+                    )
+                elif declared.isdigit() and int(declared) > max_bytes:
+                    error = AttachmentTooLargeError(
+                        path=safe_path, max_bytes=max_bytes, size=int(declared)
+                    )
+                else:
+                    async for chunk in resp.aiter_bytes():
+                        buf.extend(chunk)
+                        if len(buf) > max_bytes:
+                            # Leaving the block closes the connection mid-body.
+                            error = AttachmentTooLargeError(path=safe_path, max_bytes=max_bytes)
+                            break
+        except httpx.HTTPError as exc:
+            reason = redact(str(exc) or type(exc).__name__, [self._token])
+            raise JoplinConnectionError(method="GET", path=safe_path, reason=reason) from None
+        if error is not None:
+            raise error
+        return bytes(buf)
 
     async def create_resource(
         self,

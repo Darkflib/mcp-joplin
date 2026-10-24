@@ -66,3 +66,19 @@ class CollectionTooLargeError(ResourceError):
         return (
             f"{self.path} has more than {self.max_items} items; refusing to load them all at once"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentTooLargeError(ResourceError):
+    """An attachment exceeded ``MCP_MAX_ATTACHMENT_BYTES`` (see ``JoplinClient.download``)."""
+
+    path: str
+    max_bytes: int
+    size: int | None = None
+
+    def __str__(self) -> str:
+        actual = f" ({self.size} bytes)" if self.size is not None else ""
+        return (
+            f"{self.path} is larger than the {self.max_bytes}-byte attachment limit{actual}; "
+            "raise MCP_MAX_ATTACHMENT_BYTES to allow it"
+        )
