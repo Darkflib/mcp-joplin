@@ -30,7 +30,7 @@ Guidance for coding agents working on this repository.
 
 ### Tools
 
-- Notes: `notes_get`, `notes_list`, `notes_create`, `notes_update`, `notes_delete`
+- Notes: `notes_get`, `notes_list`, `notes_create`, `notes_append`, `notes_replace_text`, `notes_update`, `notes_delete`
 - Folders: `folders_list`, `folders_tree`, `folders_create`, `folders_update`, `folders_delete`
 - Tags: `tags_list`, `tags_create`, `tags_delete`, `tags_add_note`, `tags_remove_note`
 - Resources: `resources_list`, `resources_get`, `resources_get_content`, `resources_create`, `resources_delete`, `notes_list_resources`, `notes_attach_resource`, `notes_detach_resource`
@@ -49,6 +49,7 @@ Optional/defaulted:
 - `MCP_HOST` (default `127.0.0.1`)
 - `MCP_PORT` (default `5005`)
 - `HTTP_TIMEOUT_SECONDS` (default `15.0`)
+- `MCP_READ_ONLY` (default `false`): register only read tools
 
 ## Local dev workflow
 
@@ -78,6 +79,15 @@ Optional/defaulted:
   removes only the link/embed constructs (keeping surrounding prose, indentation and hard line
   breaks) and does not write the note when nothing matched. Keep `notes_attach_resource`'s
   label escaping in step with what that module can match.
+- Register tools with `read_tool()` or `write_tool(<annotations>)` in `mcp_server.py`, never a
+  bare `@mcp.tool()`: that gives every tool annotations, and keeps write tools out of read-only
+  mode. Pick `CREATES` / `UPDATES` / `OVERWRITES` / `EDITS` / `DELETES` by what the tool does
+  to existing content. `test_usability.py` checks the classification.
+- Note edits that change existing text should accept `expected_updated_time` and call
+  `_check_not_stale` (best-effort: Joplin has no conditional PUT).
+- Raise `ToolError` (or a `ResourceError` subclass) for anything the model should read; any
+  other exception reaches the client only as "Error executing tool".
+- `fields` parameters are validated against per-type allow-lists (`NOTE_FIELDS` etc.).
 - MCP endpoint requires `X-API-Key`.
 - Attachment content is exchanged as base64 in MCP tools.
 - MCP Python SDK 2.x (`mcp.server.mcpserver.MCPServer`); serves the 2026-07-28 protocol and

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     mcp_host: str = Field(default="127.0.0.1", alias="MCP_HOST")
     mcp_port: int = Field(default=5005, alias="MCP_PORT", ge=1, le=65535)
 
+    # Register only tools that read the notebook; tools that create, edit or delete
+    # are left out of tools/list entirely. Off by default for compatibility.
+    read_only: bool = Field(default=False, alias="MCP_READ_ONLY")
+
     http_timeout_seconds: float = Field(
         default=15.0,
         alias="HTTP_TIMEOUT_SECONDS",
