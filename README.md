@@ -21,4 +21,10 @@ Nothing was rewritten: the last version of the original server is commit
 git clone https://github.com/Darkflib/mcp-joplin.git
 cd mcp-joplin
 git checkout 6d3444464c172a3844e49ea4cc06701ce2b535f8
+# It declares mcp>=1.0.0 but uses SDK 1.x APIs that 2.x removed, so pin the SDK:
+uv venv && uv pip install -e . "mcp>=1.0.0,<2"
 ```
+
+## Licence
+
+MIT, as declared by the original project.
