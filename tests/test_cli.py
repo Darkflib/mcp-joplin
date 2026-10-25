@@ -47,7 +47,7 @@ def test_doctor_all_good(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("MCP_API_KEY", API_KEY)
-    respx.get(f"{BASE}/ping").mock(return_value=httpx.Response(200, text="JoplinClipService"))
+    respx.get(f"{BASE}/ping").mock(return_value=httpx.Response(200, text="JoplinClipperServer"))
     respx.get(f"{BASE}/folders").mock(return_value=httpx.Response(200, json={"items": []}))
 
     assert run(["doctor"]) == 0
@@ -64,7 +64,7 @@ def test_doctor_all_good(
 def test_doctor_fails_on_bad_token_and_warns_on_missing_key(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    respx.get(f"{BASE}/ping").mock(return_value=httpx.Response(200, text="JoplinClipService"))
+    respx.get(f"{BASE}/ping").mock(return_value=httpx.Response(200, text="JoplinClipperServer"))
     respx.get(f"{BASE}/folders").mock(return_value=httpx.Response(403))
 
     assert run(["doctor"]) == 1

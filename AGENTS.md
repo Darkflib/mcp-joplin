@@ -114,3 +114,8 @@ Optional/defaulted:
   turns the error into an opaque one). See `JoplinClient.download`.
 - httpx2's `ASGITransport` buffers whole responses, so SSE (`subscriptions/listen`) can't be
   tested through it; `test_http_transport.py` uses a real uvicorn socket for that.
+- Joplin API behaviours to rely on (checked against Joplin's `packages/lib/services/rest/`;
+  `tests/test_joplin_quirks.py` pins them): `GET /ping` answers `JoplinClipperServer`; a
+  successful DELETE answers 200 with an empty body (use `JoplinClient.delete`, never
+  `request_json`); `/notes` ignores a `parent_id` query, so list a folder's notes via
+  `/folders/{id}/notes`. Mocks must mirror the real API: a wrong mock hides a real bug.

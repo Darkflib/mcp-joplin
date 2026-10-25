@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 JoplinState = Literal["ok", "unreachable", "unauthorized", "error"]
 
-# Joplin's clipper server answers GET /ping with this body.
-_PING_BODY = "JoplinClipService"
+# Joplin's clipper server answers GET /ping with this body
+# (packages/lib/services/rest/routes/ping.ts).
+_PING_BODY = "JoplinClipperServer"
 
 
 @dataclass(frozen=True, slots=True)

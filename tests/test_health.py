@@ -23,7 +23,7 @@ def make(*, ttl_seconds: float = 15.0, timeout_seconds: float = 1.5) -> JoplinHe
 
 def mock_ping_ok() -> respx.Route:
     return respx.get(f"{BASE}/ping").mock(
-        return_value=httpx.Response(200, text="JoplinClipService")
+        return_value=httpx.Response(200, text="JoplinClipperServer")
     )
 
 
@@ -103,7 +103,7 @@ async def test_result_is_cached_until_ttl_or_force() -> None:
 async def test_concurrent_checks_share_one_probe() -> None:
     async def slow_ping(_: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0.05)
-        return httpx.Response(200, text="JoplinClipService")
+        return httpx.Response(200, text="JoplinClipperServer")
 
     ping = respx.get(f"{BASE}/ping").mock(side_effect=slow_ping)
     respx.get(f"{BASE}/folders").mock(return_value=httpx.Response(200, json={"items": []}))
@@ -145,7 +145,7 @@ async def test_whole_probe_bounded_by_one_deadline() -> None:
     async def slow(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0.15)
         if request.url.path == "/ping":
-            return httpx.Response(200, text="JoplinClipService")
+            return httpx.Response(200, text="JoplinClipperServer")
         return httpx.Response(200, json={"items": []})
 
     respx.get(f"{BASE}/ping").mock(side_effect=slow)

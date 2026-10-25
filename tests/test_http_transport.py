@@ -87,7 +87,7 @@ async def test_wrong_api_key_is_rejected(app: Starlette, mode: str) -> None:
 
 @respx.mock
 async def test_health_needs_no_key_and_mcp_does(app: Starlette) -> None:
-    respx.get(f"{JOPLIN}/ping").mock(return_value=httpx.Response(200, text="JoplinClipService"))
+    respx.get(f"{JOPLIN}/ping").mock(return_value=httpx.Response(200, text="JoplinClipperServer"))
     respx.get(f"{JOPLIN}/folders").mock(
         return_value=httpx.Response(200, json={"items": [], "has_more": False})
     )
@@ -120,7 +120,7 @@ async def test_dns_rebinding_protection_rejects_foreign_host(app: Starlette) -> 
 
 @respx.mock
 async def test_health_is_503_when_joplin_rejects_token(app: Starlette) -> None:
-    respx.get(f"{JOPLIN}/ping").mock(return_value=httpx.Response(200, text="JoplinClipService"))
+    respx.get(f"{JOPLIN}/ping").mock(return_value=httpx.Response(200, text="JoplinClipperServer"))
     respx.get(f"{JOPLIN}/folders").mock(return_value=httpx.Response(403, text="Invalid token"))
     async with running(app), http_client(app) as hc:
         r = await hc.get("/health")

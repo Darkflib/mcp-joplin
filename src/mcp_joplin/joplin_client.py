@@ -100,6 +100,11 @@ class JoplinClient:
         resp = await self._send(method, path, params=params, json_body=json_body)
         return self._json_object(resp, method, path)
 
+    async def delete(self, path: str, *, params: dict[str, Any] | None = None) -> None:
+        """DELETE an item. Joplin answers a successful delete with an empty body,
+        so there is nothing to parse (request_json would reject it as non-JSON)."""
+        await self._send("DELETE", path, params=params)
+
     async def get_paged(
         self,
         path: str,

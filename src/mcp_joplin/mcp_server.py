@@ -399,12 +399,13 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         """
         app = ctx.request_context.lifespan_context
         params: dict[str, Any] = {}
-        if parent_id:
-            params["parent_id"] = parent_id
         parsed_fields = _parse_fields(fields, NOTE_FIELDS)
         if parsed_fields:
             params["fields"] = parsed_fields
-        raw = await app.joplin.get_paged("/notes", page=page, limit=limit, params=params)
+        # Joplin's /notes ignores a parent_id query parameter; only the folder's own
+        # notes route filters by folder (and still paginates and honours fields).
+        path = f"/folders/{parent_id}/notes" if parent_id else "/notes"
+        raw = await app.joplin.get_paged(path, page=page, limit=limit, params=params)
         return _paged_result(raw, page=page, limit=limit)
 
     @write_tool(CREATES)
@@ -515,7 +516,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def notes_delete(note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a note (Joplin moves it to the trash, where it can be restored)."""
         app = ctx.request_context.lifespan_context
-        await app.joplin.request_json("DELETE", f"/notes/{note_id}")
+        await app.joplin.delete(f"/notes/{note_id}")
         return {"deleted": True, "id": note_id}
 
     # -------------------------------------------------------------------- folders
@@ -580,7 +581,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def folders_delete(folder_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a folder (notebook) and the notes in it (Joplin moves them to the trash)."""
         app = ctx.request_context.lifespan_context
-        await app.joplin.request_json("DELETE", f"/folders/{folder_id}")
+        await app.joplin.delete(f"/folders/{folder_id}")
         return {"deleted": True, "id": folder_id}
 
     # ----------------------------------------------------------------------- tags
@@ -611,7 +612,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def tags_delete(tag_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Delete a tag (it is removed from every note that has it)."""
         app = ctx.request_context.lifespan_context
-        await app.joplin.request_json("DELETE", f"/tags/{tag_id}")
+        await app.joplin.delete(f"/tags/{tag_id}")
         return {"deleted": True, "id": tag_id}
 
     @write_tool(UPDATES)
@@ -626,7 +627,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     async def tags_remove_note(tag_id: str, note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
         """Remove a tag from a note (the tag itself remains)."""
         app = ctx.request_context.lifespan_context
-        await app.joplin.request_json("DELETE", f"/tags/{tag_id}/notes/{note_id}")
+        await app.joplin.delete(f"/tags/{tag_id}/notes/{note_id}")
         return {"tag_id": tag_id, "note_id": note_id, "attached": False}
 
     # ------------------------------------------------------ resources (attachments)
@@ -744,7 +745,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         """Delete an attachment. Links to it in notes are left behind (broken); use
         `notes_detach_resource` first to remove them."""
         app = ctx.request_context.lifespan_context
-        await app.joplin.request_json("DELETE", f"/resources/{resource_id}")
+        await app.joplin.delete(f"/resources/{resource_id}")
         return {"deleted": True, "id": resource_id}
 
     @read_tool()
