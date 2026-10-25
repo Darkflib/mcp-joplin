@@ -9,8 +9,8 @@ import pytest
 import respx
 from mcp import Client
 
-from mcp_joplin_streamable_sse.mcp_server import create_mcp_server
-from mcp_joplin_streamable_sse.settings import Settings
+from mcp_joplin.mcp_server import create_mcp_server
+from mcp_joplin.settings import Settings
 
 JOPLIN = "http://127.0.0.1:41184"
 MODES = ["legacy", "2026-07-28"]

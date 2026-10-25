@@ -11,7 +11,7 @@ import pytest
 import respx
 from mcp import Client, StdioServerParameters
 
-from mcp_joplin_streamable_sse import __main__ as cli
+from mcp_joplin import __main__ as cli
 
 BASE = "http://127.0.0.1:41184"
 TOKEN = "SECRET-joplin-token-0123456789"
@@ -106,10 +106,30 @@ async def test_stdio_serves_tools_without_api_key(tmp_path: Path) -> None:
     env["JOPLIN_TOKEN"] = TOKEN
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mcp_joplin_streamable_sse", "stdio"],
+        args=["-m", "mcp_joplin", "stdio"],
         env=env,
         cwd=str(tmp_path),
     )
     async with Client(params) as client:
         tools = await client.list_tools()
     assert "notes_get" in {t.name for t in tools.tools}
+
+
+def test_legacy_command_still_works_and_says_so(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The pre-0.2 command name is kept for existing launcher/client configs.
+    called: list[str] = []
+
+    def fake_doctor(args: object) -> int:
+        called.append("doctor")
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_doctor", fake_doctor)
+    with pytest.raises(SystemExit) as excinfo:
+        cli.legacy_main(["doctor"])
+    assert excinfo.value.code == 0
+    assert called == ["doctor"]
+    captured = capsys.readouterr()
+    assert "deprecated" in captured.err and "mcp-joplin" in captured.err
+    assert captured.out == ""  # stdout stays clean for the stdio transport

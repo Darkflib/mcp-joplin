@@ -10,11 +10,11 @@ import pytest
 import respx
 from mcp import Client
 
-from mcp_joplin_streamable_sse.errors import JoplinApiError, JoplinConnectionError
-from mcp_joplin_streamable_sse.joplin_client import JoplinClient
-from mcp_joplin_streamable_sse.mcp_server import create_mcp_server
-from mcp_joplin_streamable_sse.redaction import RedactingFilter, install_log_redaction, redact
-from mcp_joplin_streamable_sse.settings import Settings
+from mcp_joplin.errors import JoplinApiError, JoplinConnectionError
+from mcp_joplin.joplin_client import JoplinClient
+from mcp_joplin.mcp_server import create_mcp_server
+from mcp_joplin.redaction import RedactingFilter, install_log_redaction, redact
+from mcp_joplin.settings import Settings
 
 TOKEN = "SECRET-joplin-token-0123456789"
 BASE = "http://127.0.0.1:41184"

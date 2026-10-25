@@ -4,22 +4,22 @@ Guidance for coding agents working on this repository.
 
 ## Project summary
 
-- Python package: `mcp_joplin_streamable_sse`
+- Python package: `mcp_joplin`
 - Purpose: Streamable HTTP MCP server for Joplin Data API
-- Entry point: `uv run mcp-joplin-streamable-sse`
+- Entry point: `uv run mcp-joplin`
 - Python target: 3.12+
 
 ## Key files
 
-- `src/mcp_joplin_streamable_sse/asgi.py` - ASGI app, API-key middleware, routing
-- `src/mcp_joplin_streamable_sse/mcp_server.py` - MCP resources/tools registration
-- `src/mcp_joplin_streamable_sse/joplin_client.py` - async Joplin API client (JSON/bytes/multipart)
-- `src/mcp_joplin_streamable_sse/models.py` - response/data models
-- `src/mcp_joplin_streamable_sse/settings.py` - environment config
-- `src/mcp_joplin_streamable_sse/__main__.py` - CLI (`serve`/`stdio`/`doctor`)
-- `src/mcp_joplin_streamable_sse/health.py` - cached Joplin readiness probe
-- `src/mcp_joplin_streamable_sse/resource_links.py` - remove resource references from note bodies
-- `src/mcp_joplin_streamable_sse/redaction.py` - token redaction for errors and logs
+- `src/mcp_joplin/asgi.py` - ASGI app, API-key middleware, routing
+- `src/mcp_joplin/mcp_server.py` - MCP resources/tools registration
+- `src/mcp_joplin/joplin_client.py` - async Joplin API client (JSON/bytes/multipart)
+- `src/mcp_joplin/models.py` - response/data models
+- `src/mcp_joplin/settings.py` - environment config
+- `src/mcp_joplin/__main__.py` - CLI (`serve`/`stdio`/`doctor`)
+- `src/mcp_joplin/health.py` - cached Joplin readiness probe
+- `src/mcp_joplin/resource_links.py` - remove resource references from note bodies
+- `src/mcp_joplin/redaction.py` - token redaction for errors and logs
 
 ## Exposed MCP surface (current)
 
@@ -59,7 +59,7 @@ Optional/defaulted:
 
 1. `uv sync --all-extras`
 2. `uv run python -m pytest -q`
-3. Run server: `uv run mcp-joplin-streamable-sse`
+3. Run server: `uv run mcp-joplin`
 
 ## Editing guidelines
 

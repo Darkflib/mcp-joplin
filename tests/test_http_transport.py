@@ -18,8 +18,8 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.server.subscriptions import ResourceUpdated
 from starlette.applications import Starlette
 
-from mcp_joplin_streamable_sse.asgi import create_app
-from mcp_joplin_streamable_sse.settings import ConfigError, Settings
+from mcp_joplin.asgi import create_app
+from mcp_joplin.settings import ConfigError, Settings
 
 API_KEY = "test-api-key-123456"
 JOPLIN = "http://127.0.0.1:41184"

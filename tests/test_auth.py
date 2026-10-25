@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from starlette.testclient import TestClient
 
-from mcp_joplin_streamable_sse.asgi import create_app
+from mcp_joplin.asgi import create_app
 
 
 def test_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

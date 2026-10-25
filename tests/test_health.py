@@ -9,7 +9,7 @@ import httpx
 import pytest
 import respx
 
-from mcp_joplin_streamable_sse.health import JoplinHealth
+from mcp_joplin.health import JoplinHealth
 
 BASE = "http://127.0.0.1:41184"
 TOKEN = "SECRET-joplin-token-0123456789"
@@ -120,7 +120,7 @@ async def test_concurrent_checks_share_one_probe() -> None:
 async def test_transitions_logged_once_each(caplog: pytest.LogCaptureFixture) -> None:
     mock_ping_ok()
     folders = respx.get(f"{BASE}/folders")
-    caplog.set_level(logging.INFO, logger="mcp_joplin_streamable_sse.health")
+    caplog.set_level(logging.INFO, logger="mcp_joplin.health")
     checker = make(ttl_seconds=0)
     try:
         folders.mock(return_value=httpx.Response(403))

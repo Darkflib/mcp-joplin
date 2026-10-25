@@ -10,10 +10,10 @@ import pytest
 import respx
 from mcp import Client
 
-from mcp_joplin_streamable_sse.errors import CollectionTooLargeError, JoplinApiError
-from mcp_joplin_streamable_sse.joplin_client import JoplinClient
-from mcp_joplin_streamable_sse.mcp_server import create_mcp_server
-from mcp_joplin_streamable_sse.settings import Settings
+from mcp_joplin.errors import CollectionTooLargeError, JoplinApiError
+from mcp_joplin.joplin_client import JoplinClient
+from mcp_joplin.mcp_server import create_mcp_server
+from mcp_joplin.settings import Settings
 
 JOPLIN = "http://127.0.0.1:41184"
 RID = "0123456789abcdef0123456789abcdef"

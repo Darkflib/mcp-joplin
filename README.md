@@ -1,8 +1,14 @@
-# Joplin Remote MCP server for LLM integration
+# mcp-joplin: Joplin MCP server for LLM integration
 
 This project provides a Streamable HTTP MCP server over the Joplin Data API (Web Clipper).
 It enables MCP clients (including coding agents/LLMs) to read and manage notes, folders,
 tags, search, and attachments.
+
+> **Renamed in 0.2.0.** This project was `mcp-joplin-streamable-sse` (package
+> `mcp_joplin_streamable_sse`). The command is now `mcp-joplin` and the package `mcp_joplin`.
+> The old `mcp-joplin-streamable-sse` command still works, prints a deprecation note to
+> stderr, and will be removed in a future major release. Settings and environment
+> variables are unchanged.
 
 ## Features
 
@@ -143,10 +149,10 @@ overwritten.
 ### Run
 
 ```bash
-uv run mcp-joplin-streamable-sse            # same as `serve`
-uv run mcp-joplin-streamable-sse serve      # Streamable HTTP on $MCP_HOST:$MCP_PORT (needs MCP_API_KEY)
-uv run mcp-joplin-streamable-sse stdio      # MCP over stdin/stdout for clients that launch servers
-uv run mcp-joplin-streamable-sse doctor     # check config, Joplin reachability/token, and the port
+uv run mcp-joplin           # same as `serve`
+uv run mcp-joplin serve     # Streamable HTTP on $MCP_HOST:$MCP_PORT (needs MCP_API_KEY)
+uv run mcp-joplin stdio     # MCP over stdin/stdout for clients that launch servers
+uv run mcp-joplin doctor    # check config, Joplin reachability/token, and the port
 ```
 
 Exit codes: `0` ok, `1` runtime failure (or a failed `doctor` check), `2` invalid configuration.
@@ -162,8 +168,8 @@ server with Joplin, supplies `JOPLIN_BASE_URL`/`JOPLIN_TOKEN` from its own setti
 {
   "name": "Joplin MCP",
   "command": "/opt/homebrew/bin/uv",
-  "args": ["run", "--project", "/Users/you/mcp-joplin-streamable-sse", "mcp-joplin-streamable-sse"],
-  "cwd": "/Users/you/mcp-joplin-streamable-sse",
+  "args": ["run", "--project", "/Users/you/mcp-joplin", "mcp-joplin"],
+  "cwd": "/Users/you/mcp-joplin",
   "healthUrl": "http://127.0.0.1:5005/health",
   "env": { "MCP_HOST": "127.0.0.1", "MCP_PORT": "5005" },
   "secretEnv": ["MCP_API_KEY"],
@@ -211,7 +217,7 @@ Note that `JOPLIN_TOKEN` then lives in that client's config:
   "mcpServers": {
     "joplin": {
       "command": "/opt/homebrew/bin/uv",
-      "args": ["run", "--project", "/Users/you/mcp-joplin-streamable-sse", "mcp-joplin-streamable-sse", "stdio"],
+      "args": ["run", "--project", "/Users/you/mcp-joplin", "mcp-joplin", "stdio"],
       "env": { "JOPLIN_TOKEN": "<joplin web clipper token>" }
     }
   }

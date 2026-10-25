@@ -13,13 +13,13 @@ from mcp import Client
 from mcp.server.subscriptions import ResourceUpdated, ServerEvent
 from pydantic import ValidationError
 
-from mcp_joplin_streamable_sse.events import (
+from mcp_joplin.events import (
     ListenerTrackingBus,
     NoteEventPoller,
 )
-from mcp_joplin_streamable_sse.joplin_client import JoplinClient
-from mcp_joplin_streamable_sse.mcp_server import create_mcp_server
-from mcp_joplin_streamable_sse.settings import Settings
+from mcp_joplin.joplin_client import JoplinClient
+from mcp_joplin.mcp_server import create_mcp_server
+from mcp_joplin.settings import Settings
 
 JOPLIN = "http://127.0.0.1:41184"
 TOKEN = "joplin-token-0123456789"
@@ -191,7 +191,7 @@ async def test_run_reanchors_after_client_error_and_logs_once(
     respx.get(f"{JOPLIN}/events").mock(side_effect=handler)
     bus = ListenerTrackingBus()
     poller = NoteEventPoller(joplin, bus, interval_seconds=0.01, max_backoff_seconds=0.02)
-    with caplog.at_level(logging.INFO, logger="mcp_joplin_streamable_sse.events"):
+    with caplog.at_level(logging.INFO, logger="mcp_joplin.events"):
         received = await collect_events(bus, poller, want=1)
     assert received == [ResourceUpdated(uri="joplin-note://n9")]
     assert calls[:4] == [None, "5", None, "20"]

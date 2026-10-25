@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_joplin_streamable_sse.resource_links import remove_resource_links
+from mcp_joplin.resource_links import remove_resource_links
 
 RID = "0123456789abcdef0123456789abcdef"
 OTHER = "ffffffffffffffffffffffffffffffff"

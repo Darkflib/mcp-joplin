@@ -131,7 +131,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="mcp-joplin-streamable-sse",
+        prog="mcp-joplin",
         description="MCP server for the Joplin Data API.",
     )
     sub = parser.add_subparsers(dest="command", metavar="{serve,stdio,doctor}")
@@ -150,6 +150,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     raise SystemExit(args.func(args))
+
+
+def legacy_main(argv: Sequence[str] | None = None) -> None:
+    """The pre-0.2 ``mcp-joplin-streamable-sse`` command: same CLI, plus a nudge.
+
+    The notice goes to stderr so it can't corrupt the stdio transport, and it
+    lands in the sidecar launcher's log panel where it will be seen.
+    """
+    print(
+        "note: 'mcp-joplin-streamable-sse' is deprecated; run 'mcp-joplin' instead "
+        "(same subcommands and settings).",
+        file=sys.stderr,
+    )
+    main(argv)
 
 
 if __name__ == "__main__":

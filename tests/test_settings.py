@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from mcp_joplin_streamable_sse.settings import Settings
+from mcp_joplin.settings import Settings
 
 
 def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
