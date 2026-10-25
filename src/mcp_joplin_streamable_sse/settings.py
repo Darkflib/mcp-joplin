@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import AnyHttpUrl, Field
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_API_KEY_LENGTH = 12
+MIN_EVENTS_POLL_SECONDS = 0.5
 
 
 class Settings(BaseSettings):
@@ -40,11 +41,29 @@ class Settings(BaseSettings):
     # are left out of tools/list entirely. Off by default for compatibility.
     read_only: bool = Field(default=False, alias="MCP_READ_ONLY")
 
+    # Ceiling for the binary attachment paths (resources_read, joplin-resource://).
+    # resources_get_content predates it and stays uncapped for compatibility.
+    max_attachment_bytes: int = Field(
+        default=10 * 1024 * 1024, alias="MCP_MAX_ATTACHMENT_BYTES", ge=1
+    )
+
+    # How often to poll Joplin's /events feed while a client is listening for note
+    # changes (subscriptions/listen, protocol 2026-07-28). 0 turns the feed off.
+    events_poll_seconds: float = Field(default=5.0, alias="MCP_EVENTS_POLL_SECONDS", ge=0)
+
     http_timeout_seconds: float = Field(
         default=15.0,
         alias="HTTP_TIMEOUT_SECONDS",
         gt=0,
     )
+
+    @field_validator("events_poll_seconds")
+    @classmethod
+    def _poll_floor(cls, value: float) -> float:
+        # Anything faster just hammers Joplin; 0 is the explicit "off".
+        if 0 < value < MIN_EVENTS_POLL_SECONDS:
+            raise ValueError(f"must be 0 (off) or at least {MIN_EVENTS_POLL_SECONDS} seconds")
+        return value
 
     def require_api_key(self) -> str:
         """Return the API key, or raise if HTTP serving was asked for without one."""

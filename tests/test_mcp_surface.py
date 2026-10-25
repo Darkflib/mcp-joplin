@@ -44,6 +44,8 @@ EXPECTED_TOOLS = {
     # Added with the safer-editing tools.
     "notes_append",
     "notes_replace_text",
+    # Added with binary attachments.
+    "resources_read",
 }
 
 FOLDERS = {
@@ -75,7 +77,11 @@ async def test_resource_templates_listed(settings: Settings, mode: str) -> None:
     async with Client(create_mcp_server(settings), mode=mode) as client:
         templates = await client.list_resource_templates()
     uris = {t.uri_template for t in templates.resource_templates}
-    assert uris == {"joplin-note://{note_id}", "joplin-folders://tree{?root_id}"}
+    assert uris == {
+        "joplin-note://{note_id}",
+        "joplin-folders://tree{?root_id}",
+        "joplin-resource://{resource_id}",
+    }
 
 
 @pytest.mark.parametrize("mode", MODES)

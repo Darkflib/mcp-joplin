@@ -4,16 +4,30 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, TypeVar
 
+import anyio
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.server.mcpserver.resources import FunctionResource, ResourceTemplate
+from mcp.types import (
+    AudioContent,
+    BlobResourceContents,
+    ContentBlock,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+    TextResourceContents,
+    ToolAnnotations,
+)
 from pydantic import Field
 
+from .errors import AttachmentTooLargeError
+from .events import ListenerTrackingBus, NoteEventPoller
 from .joplin_client import JoplinClient
 from .models import (
     Folder,
@@ -165,6 +179,80 @@ def _build_folder_tree(
     return build(root_id)
 
 
+# --- Binary attachments ---
+
+ResourceId = Annotated[
+    str, Field(pattern=r"^[0-9a-fA-F]{32}$", description="Attachment id (32 hex characters).")
+]
+_FALLBACK_MIME = "application/octet-stream"
+_MIME_RE = re.compile(r"^[A-Za-z0-9][\w.+-]*/[A-Za-z0-9][\w.+-]*$")
+# Image formats models can actually look at. SVG goes as text; TIFF, HEIC etc. as blobs.
+_VIEWABLE_IMAGES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_TEXTUAL_APPLICATION = frozenset(
+    {"application/json", "application/xml", "application/x-yaml", "application/yaml",
+     "application/javascript", "image/svg+xml"}
+)  # fmt: skip
+
+
+def _clean_mime(mime: Any) -> str:
+    """Joplin's stored MIME type, stripped of parameters; fall back if it's junk."""
+    if not isinstance(mime, str):
+        return _FALLBACK_MIME
+    base = mime.split(";", 1)[0].strip().lower()
+    return base if _MIME_RE.match(base) else _FALLBACK_MIME
+
+
+def _is_textual(mime: str) -> bool:
+    return mime.startswith("text/") or mime in _TEXTUAL_APPLICATION or mime.endswith("+json")
+
+
+def attachment_uri(resource_id: str) -> str:
+    return f"joplin-resource://{resource_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class TypedBytes:
+    """Bytes plus the MIME type to serve them as (see ``_TypedBytesTemplate``)."""
+
+    data: bytes
+    mime_type: str
+
+
+class _TypedBytesTemplate(ResourceTemplate):
+    """A resource template whose reads carry a per-resource MIME type.
+
+    The SDK fixes a template's ``mime_type`` when it is registered; attachments
+    differ per id. A template function returning ``TypedBytes`` gets its bytes
+    served under that MIME type instead.
+    """
+
+    async def create_resource(self, uri: str, params: dict[str, Any], context: Any) -> Any:
+        resource = await super().create_resource(uri, params, context)
+        if isinstance(resource, FunctionResource):
+            value = resource.fn()
+            if isinstance(value, TypedBytes):
+                data = value.data
+                return resource.model_copy(
+                    update={"mime_type": value.mime_type, "fn": lambda: data}
+                )
+        return resource
+
+
+def _use_typed_bytes_template(mcp: MCPServer[Any], uri_template: str) -> None:
+    """Swap a registered template for a ``_TypedBytesTemplate`` with the same fields.
+
+    Registering through ``@mcp.resource`` first keeps the SDK's own checks
+    (URI/parameter match, path-safety policy). The swap reaches into SDK
+    internals; tests/test_attachments.py pins the MIME type it produces, so an
+    SDK change that breaks it fails loudly rather than serving octet-stream.
+    """
+    templates = mcp._resource_manager._templates
+    original = templates[uri_template]
+    templates[uri_template] = _TypedBytesTemplate.model_construct(
+        **{name: getattr(original, name) for name in type(original).model_fields}
+    )
+
+
 def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     @asynccontextmanager
     async def lifespan(_: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
@@ -177,11 +265,23 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
             timeout_seconds=settings.http_timeout_seconds,
         )
         try:
-            yield AppContext(settings=settings, joplin=joplin)
+            async with anyio.create_task_group() as tg:
+                if settings.events_poll_seconds > 0:
+                    poller = NoteEventPoller(
+                        joplin, bus, interval_seconds=settings.events_poll_seconds
+                    )
+                    tg.start_soon(poller.run)
+                try:
+                    yield AppContext(settings=settings, joplin=joplin)
+                finally:
+                    tg.cancel_scope.cancel()
         finally:
             await joplin.aclose()
 
     read_only = settings.read_only
+    # Note changes from Joplin's /events feed are published here for
+    # subscriptions/listen streams; see events.py.
+    bus = ListenerTrackingBus()
     mcp = MCPServer(
         "Joplin",
         instructions=(
@@ -192,9 +292,11 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
                 else "Prefer notes_append / notes_replace_text over notes_update for edits, and "
                 "pass expected_updated_time from your last read so concurrent edits aren't lost. "
             )
-            + "Note ids are 32-character hex strings; use search or the list tools to find them."
+            + "Note ids are 32-character hex strings; use search or the list tools to find them. "
+            + "Read attachments with resources_read."
         ),
         lifespan=lifespan,
+        subscriptions=bus,
     )
 
     def read_tool() -> Callable[[_F], _F]:
@@ -243,6 +345,32 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         app = ctx.request_context.lifespan_context
         folders = await app.joplin.get_all("/folders", params={"fields": "id,title,parent_id"})
         return _build_folder_tree(folders, root_id or None)
+
+    async def fetch_attachment(app: AppContext, resource_id: str) -> tuple[dict[str, Any], bytes]:
+        """Metadata, then the file, refusing anything over the configured cap."""
+        limit = app.settings.max_attachment_bytes
+        meta = await app.joplin.request_json(
+            "GET",
+            f"/resources/{resource_id}",
+            params={"fields": "id,title,mime,filename,size"},
+        )
+        size = meta.get("size")
+        # Joplin's recorded size lets us refuse before downloading anything.
+        if isinstance(size, int) and size > limit:
+            raise AttachmentTooLargeError(
+                path=f"/resources/{resource_id}/file", max_bytes=limit, size=size
+            )
+        data = await app.joplin.download(f"/resources/{resource_id}/file", max_bytes=limit)
+        return meta, data
+
+    @mcp.resource("joplin-resource://{resource_id}", mime_type=_FALLBACK_MIME)
+    async def read_attachment_resource(resource_id: str, ctx: JoplinCtx) -> TypedBytes:
+        """An attachment's file, served with its own MIME type."""
+        app = ctx.request_context.lifespan_context
+        meta, data = await fetch_attachment(app, resource_id)
+        return TypedBytes(data=data, mime_type=_clean_mime(meta.get("mime")))
+
+    _use_typed_bytes_template(mcp, "joplin-resource://{resource_id}")
 
     # ---------------------------------------------------------------------- notes
 
@@ -533,8 +661,44 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         return Resource.model_validate(raw)
 
     @read_tool()
+    async def resources_read(resource_id: ResourceId, ctx: JoplinCtx) -> list[ContentBlock]:
+        """Read an attachment as native content: images you can see (PNG, JPEG, GIF,
+        WebP), audio, text files as text, anything else as an embedded file.
+
+        Files over the server's size limit (MCP_MAX_ATTACHMENT_BYTES, default 10 MiB)
+        are refused; check `size` with resources_get first if unsure.
+        """
+        app = ctx.request_context.lifespan_context
+        meta, data = await fetch_attachment(app, resource_id)
+        mime = _clean_mime(meta.get("mime"))
+        name = meta.get("filename") or meta.get("title") or resource_id
+        summary = TextContent(type="text", text=f"Attachment {name!r} ({mime}, {len(data)} bytes)")
+        uri = attachment_uri(resource_id)
+        encoded = base64.b64encode(data).decode("ascii")
+        block: ContentBlock
+        if mime in _VIEWABLE_IMAGES:
+            block = ImageContent(type="image", data=encoded, mime_type=mime)
+        elif mime.startswith("audio/"):
+            block = AudioContent(type="audio", data=encoded, mime_type=mime)
+        else:
+            text: str | None = None
+            if _is_textual(mime):
+                try:
+                    text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = None  # Mislabelled binary: send it as a blob instead.
+            contents: TextResourceContents | BlobResourceContents = (
+                TextResourceContents(uri=uri, mime_type=mime, text=text)
+                if text is not None
+                else BlobResourceContents(uri=uri, mime_type=mime, blob=encoded)
+            )
+            block = EmbeddedResource(type="resource", resource=contents)
+        return [summary, block]
+
+    @read_tool()
     async def resources_get_content(resource_id: str, ctx: JoplinCtx) -> ResourceBlob:
-        """Get an attachment's file bytes, base64-encoded. Check `size` first: large files
+        """Get an attachment's file bytes, base64-encoded in JSON. Prefer resources_read,
+        which returns images, audio and text natively. Check `size` first: large files
         are expensive to return."""
         app = ctx.request_context.lifespan_context
         meta_raw = await app.joplin.request_json(
