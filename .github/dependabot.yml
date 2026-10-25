@@ -10,5 +10,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Named explicitly: they live in the `dev` extra, which Dependabot's
+      # dependency-type filter doesn't recognise as development for uv.
       dev-tools:
-        dependency-type: development
+        patterns:
+          - mypy
+          - pytest
+          - pytest-asyncio
+          - respx
+          - ruff
