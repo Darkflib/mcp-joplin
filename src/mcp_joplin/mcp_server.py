@@ -770,7 +770,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     @write_tool(UPDATES)
     async def notes_attach_resource(
         note_id: str,
-        resource_id: str,
+        resource_id: ResourceId,
         ctx: JoplinCtx,
         alt_text: str | None = None,
         embed: bool = False,
@@ -792,7 +792,7 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
     @write_tool(OVERWRITES)
     async def notes_detach_resource(
         note_id: str,
-        resource_id: str,
+        resource_id: ResourceId,
         ctx: JoplinCtx,
         expected_updated_time: ExpectedUpdatedTime = None,
     ) -> NoteDetachResult:

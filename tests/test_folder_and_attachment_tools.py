@@ -165,3 +165,17 @@ async def test_attach_escapes_label_so_detach_can_remove_it(settings: Settings) 
     assert result.structured_content is not None
     assert result.structured_content["links_removed"] == 1
     assert state["body"] == "Intro\n"
+
+
+@pytest.mark.parametrize("tool", ["notes_attach_resource", "notes_detach_resource"])
+@pytest.mark.parametrize("bad_id", ["", "r1", "../notes", RID + "0"])
+@respx.mock
+async def test_link_tools_reject_malformed_resource_id(
+    settings: Settings, tool: str, bad_id: str
+) -> None:
+    # An empty id used to write "[](:/)" into the note.
+    route = respx.route(host="127.0.0.1").mock(return_value=httpx.Response(500))
+    async with Client(create_mcp_server(settings)) as client:
+        result = await client.call_tool(tool, {"note_id": "n1", "resource_id": bad_id})
+    assert result.is_error
+    assert route.call_count == 0
