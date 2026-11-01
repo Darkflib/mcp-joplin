@@ -258,10 +258,36 @@ to survive that change.
 Under the sidecar launcher, add it to the entry's `env`:
 `"env": { "MCP_READ_ONLY": "true", ... }`.
 
+## Delete confirmations
+
+Set `MCP_CONFIRM_DELETES` to have the user approve each delete (`notes_delete`,
+`folders_delete`, `tags_delete`, `resources_delete`) before it happens. The client shows a
+prompt naming the item, e.g. *Delete the notebook “Work” and every note in it?*
+
+| Value | Behaviour |
+|---|---|
+| `off` (default) | Never ask; deletes work as before. |
+| `ask` | Ask whenever the client can show a prompt; otherwise delete as before. |
+| `require` | Ask, and refuse to delete when the client can't ask. |
+
+The model never sees or fills the confirmation: it isn't a tool argument. A refusal comes
+back as an error saying the item was not deleted.
+
+Whether a client "can ask" depends on the client and the connection:
+
+- **MCP 2026-07-28 clients** that support elicitation can always be asked, over HTTP or stdio.
+- **Earlier clients** need the server to send them a request mid-call. That works over
+  `stdio`, but not over the stateless HTTP endpoint, so under `ask` those deletes go ahead
+  unprompted, and under `require` they are refused.
+
+It is off by default so existing setups behave as before; `ask` is the recommended setting
+for interactive use. Under the sidecar launcher: `"env": { "MCP_CONFIRM_DELETES": "ask", ... }`.
+
 ## Security
 
 - Do not commit .env
-- Use `MCP_READ_ONLY=true` for clients that only need to read
+- Use `MCP_READ_ONLY=true` for clients that only need to read, and
+  `MCP_CONFIRM_DELETES=ask` (or `require`) for ones that write
 - Rotate JOPLIN_TOKEN if it was ever shared or committed
 - Keep MCP bound to 127.0.0.1 unless you have additional network protections
 - The Joplin token is redacted from tool errors and logs (Joplin only accepts it as a URL
