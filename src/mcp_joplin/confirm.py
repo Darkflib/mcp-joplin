@@ -41,7 +41,12 @@ class DeleteConfirmation(BaseModel):
 def _can_ask(ctx: Context[Any, Any]) -> bool:
     """Whether this client can show the user a prompt on this request."""
     capabilities = ctx.client_capabilities
-    if capabilities is None or capabilities.elicitation is None:
+    elicitation = capabilities.elicitation if capabilities is not None else None
+    if elicitation is None:
+        return False
+    # The prompt is a form. Same rule as the SDK's own check: a bare
+    # `elicitation: {}` (pre-modes clients) means form; URL-only does not.
+    if elicitation.form is None and elicitation.url is not None:
         return False
     version = ctx.protocol_version
     if version is not None and is_version_at_least(version, _INPUT_REQUIRED_VERSION):

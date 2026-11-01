@@ -234,3 +234,34 @@ async def test_over_stateless_http(
     assert not result.is_error, text_of(result)
     assert (len(answer.asked) == 1) is expect_asked
     assert delete.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("elicitation", "expected"),
+    [
+        (None, False),
+        (types.ElicitationCapability(), True),  # bare {}: pre-modes clients mean form
+        (types.ElicitationCapability(form=types.FormElicitationCapability()), True),
+        (
+            types.ElicitationCapability(
+                form=types.FormElicitationCapability(), url=types.UrlElicitationCapability()
+            ),
+            True,
+        ),
+        # URL-only clients can't show the confirmation form; the SDK would refuse it.
+        (types.ElicitationCapability(url=types.UrlElicitationCapability()), False),
+    ],
+)
+def test_can_ask_needs_form_support(
+    elicitation: types.ElicitationCapability | None, expected: bool
+) -> None:
+    from types import SimpleNamespace
+
+    from mcp_joplin.confirm import _can_ask
+
+    ctx = SimpleNamespace(
+        client_capabilities=types.ClientCapabilities(elicitation=elicitation),
+        protocol_version="2026-07-28",
+        session=SimpleNamespace(can_send_request=False),
+    )
+    assert _can_ask(ctx) is expected  # type: ignore[arg-type]
