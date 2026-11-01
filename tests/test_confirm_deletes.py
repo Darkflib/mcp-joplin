@@ -43,6 +43,8 @@ def make_settings(monkeypatch: pytest.MonkeyPatch, mode: str | None) -> Settings
     monkeypatch.setenv("JOPLIN_TOKEN", "joplin-token-0123456789")
     monkeypatch.setenv("MCP_API_KEY", "test-api-key-123456")
     monkeypatch.setenv("MCP_EVENTS_POLL_SECONDS", "0")
+    # mode=None must mean the default, whatever the developer's shell exports.
+    monkeypatch.delenv("MCP_CONFIRM_DELETES", raising=False)
     if mode is not None:
         monkeypatch.setenv("MCP_CONFIRM_DELETES", mode)
     return Settings(_env_file=None)
@@ -120,7 +122,13 @@ async def test_ask_and_accept_deletes(
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize(
     ("action", "content"),
-    [("decline", None), ("cancel", None), ("accept", {"confirm": False})],
+    [
+        ("decline", None),
+        ("cancel", None),
+        ("accept", {"confirm": False}),
+        # Accepted without the field: the box defaults to unticked, so no delete.
+        ("accept", {}),
+    ],
 )
 @respx.mock
 async def test_ask_and_refuse_keeps_the_item(
@@ -265,3 +273,20 @@ def test_can_ask_needs_form_support(
         session=SimpleNamespace(can_send_request=False),
     )
     assert _can_ask(ctx) is expected  # type: ignore[arg-type]
+
+
+async def test_prompt_box_starts_unticked(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The form a client renders must not pre-tick Delete.
+    seen: list[types.ElicitRequestParams] = []
+
+    async def capture(context: Any, params: types.ElicitRequestParams) -> types.ElicitResult:
+        seen.append(params)
+        return types.ElicitResult(action="decline")
+
+    with respx.mock:
+        mock_item("/notes/n1", {"title": "T"})
+        server = create_mcp_server(make_settings(monkeypatch, "ask"))
+        async with Client(server, mode="2026-07-28", elicitation_callback=capture) as client:
+            await client.call_tool("notes_delete", {"note_id": "n1"})
+    schema = seen[0].requested_schema  # type: ignore[union-attr]
+    assert schema["properties"]["confirm"]["default"] is False

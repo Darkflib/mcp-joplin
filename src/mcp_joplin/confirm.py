@@ -33,9 +33,13 @@ _INPUT_REQUIRED_VERSION = "2026-07-28"
 
 
 class DeleteConfirmation(BaseModel):
-    """The form the user sees. Accepting with the box ticked confirms."""
+    """The form the user sees. Only an accepted form with the box ticked confirms.
 
-    confirm: bool = Field(default=True, title="Delete", description="Untick to keep it.")
+    The box starts unticked: a client that accepts without sending `confirm`
+    must not count as a yes for something destructive.
+    """
+
+    confirm: bool = Field(default=False, title="Delete", description="Tick to delete it.")
 
 
 def _can_ask(ctx: Context[Any, Any]) -> bool:
@@ -68,7 +72,7 @@ async def _confirm(
     app = ctx.request_context.lifespan_context
     mode = app.settings.confirm_deletes
     if mode == "off":
-        return DeleteConfirmation()
+        return DeleteConfirmation(confirm=True)  # no prompt: proceed as before
     if not _can_ask(ctx):
         if mode == "require":
             raise ToolError(
@@ -76,7 +80,7 @@ async def _confirm(
                 f"(MCP_CONFIRM_DELETES=require), and this client can't ask them. "
                 f"The {what} {item_id} was left as it is."
             )
-        return DeleteConfirmation()
+        return DeleteConfirmation(confirm=True)  # no prompt: proceed as before
     # Name the item in the question; a 404 here surfaces as the usual Joplin error.
     item = await app.joplin.request_json("GET", path, params={"fields": fields})
     return Elicit(describe(item), DeleteConfirmation)
@@ -163,9 +167,12 @@ ResourceDeleteConfirmation = Annotated[Confirmation, Resolve(confirm_resource_de
 
 def require_confirmed(confirmation: Confirmation, what: str, item_id: str) -> None:
     """Raise unless the user confirmed (or no confirmation was needed)."""
-    if isinstance(confirmation, AcceptedElicitation) and confirmation.data.confirm:
-        return
+    if isinstance(confirmation, AcceptedElicitation):
+        if confirmation.data.confirm:
+            return
+        reason = "the user didn't tick Delete"
+    else:
+        reason = "the user declined"
     raise ToolError(
-        f"Not deleted: the user declined to delete the {what} {item_id}. "
-        "Leave it unless they ask again."
+        f"Not deleted: {reason}, so the {what} {item_id} was kept. Leave it unless they ask again."
     )

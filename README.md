@@ -270,8 +270,10 @@ prompt naming the item, e.g. *Delete the notebook “Work” and every note in i
 | `ask` | Ask whenever the client can show a prompt; otherwise delete as before. |
 | `require` | Ask, and refuse to delete when the client can't ask. |
 
-The model never sees or fills the confirmation: it isn't a tool argument. A refusal comes
-back as an error saying the item was not deleted.
+The prompt's **Delete** box starts unticked: only accepting with it ticked deletes. Declining,
+cancelling, or accepting with the box unticked keeps the item, and the model gets an error
+saying it was not deleted. The model never sees or fills the confirmation: it isn't a tool
+argument.
 
 Whether a client "can ask" depends on the client and the connection:
 
