@@ -26,6 +26,13 @@ from mcp.types import (
 )
 from pydantic import Field
 
+from .confirm import (
+    FolderDeleteConfirmation,
+    NoteDeleteConfirmation,
+    ResourceDeleteConfirmation,
+    TagDeleteConfirmation,
+    require_confirmed,
+)
 from .errors import AttachmentTooLargeError
 from .events import ListenerTrackingBus, NoteEventPoller
 from .joplin_client import JoplinClient
@@ -513,8 +520,11 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         return NoteEditResult.model_validate({**updated, "replacements": found})
 
     @write_tool(DELETES)
-    async def notes_delete(note_id: str, ctx: JoplinCtx) -> dict[str, Any]:
+    async def notes_delete(
+        note_id: str, ctx: JoplinCtx, confirmation: NoteDeleteConfirmation
+    ) -> dict[str, Any]:
         """Delete a note (Joplin moves it to the trash, where it can be restored)."""
+        require_confirmed(confirmation, "note", note_id)
         app = ctx.request_context.lifespan_context
         await app.joplin.delete(f"/notes/{note_id}")
         return {"deleted": True, "id": note_id}
@@ -578,8 +588,11 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         return Folder.model_validate(raw)
 
     @write_tool(DELETES)
-    async def folders_delete(folder_id: str, ctx: JoplinCtx) -> dict[str, Any]:
+    async def folders_delete(
+        folder_id: str, ctx: JoplinCtx, confirmation: FolderDeleteConfirmation
+    ) -> dict[str, Any]:
         """Delete a folder (notebook) and the notes in it (Joplin moves them to the trash)."""
+        require_confirmed(confirmation, "notebook", folder_id)
         app = ctx.request_context.lifespan_context
         await app.joplin.delete(f"/folders/{folder_id}")
         return {"deleted": True, "id": folder_id}
@@ -609,8 +622,11 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         return await app.joplin.request_json("POST", "/tags", json_body={"title": title})
 
     @write_tool(DELETES)
-    async def tags_delete(tag_id: str, ctx: JoplinCtx) -> dict[str, Any]:
+    async def tags_delete(
+        tag_id: str, ctx: JoplinCtx, confirmation: TagDeleteConfirmation
+    ) -> dict[str, Any]:
         """Delete a tag (it is removed from every note that has it)."""
+        require_confirmed(confirmation, "tag", tag_id)
         app = ctx.request_context.lifespan_context
         await app.joplin.delete(f"/tags/{tag_id}")
         return {"deleted": True, "id": tag_id}
@@ -741,9 +757,12 @@ def create_mcp_server(settings: Settings) -> MCPServer[AppContext]:
         return Resource.model_validate(raw)
 
     @write_tool(DELETES)
-    async def resources_delete(resource_id: str, ctx: JoplinCtx) -> dict[str, Any]:
+    async def resources_delete(
+        resource_id: str, ctx: JoplinCtx, confirmation: ResourceDeleteConfirmation
+    ) -> dict[str, Any]:
         """Delete an attachment. Links to it in notes are left behind (broken); use
         `notes_detach_resource` first to remove them."""
+        require_confirmed(confirmation, "attachment", resource_id)
         app = ctx.request_context.lifespan_context
         await app.joplin.delete(f"/resources/{resource_id}")
         return {"deleted": True, "id": resource_id}

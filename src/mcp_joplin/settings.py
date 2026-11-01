@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,6 +42,13 @@ class Settings(BaseSettings):
     # Register only tools that read the notebook; tools that create, edit or delete
     # are left out of tools/list entirely. Off by default for compatibility.
     read_only: bool = Field(default=False, alias="MCP_READ_ONLY")
+
+    # Ask the user before deleting (see confirm.py). "off" by default so existing
+    # deployments behave as before; "ask" prompts where the client can show one,
+    # "require" also refuses deletes from clients that can't.
+    confirm_deletes: Literal["off", "ask", "require"] = Field(
+        default="off", alias="MCP_CONFIRM_DELETES"
+    )
 
     # Ceiling for the binary attachment paths (resources_read, joplin-resource://).
     # resources_get_content predates it and stays uncapped for compatibility.

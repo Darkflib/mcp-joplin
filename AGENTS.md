@@ -54,6 +54,7 @@ Optional/defaulted:
   is documented in the README; don't flip it without a major version.
 - `MCP_MAX_ATTACHMENT_BYTES` (default `10485760`): cap for `resources_read` / `joplin-resource://`
 - `MCP_EVENTS_POLL_SECONDS` (default `5`; `0` = off; otherwise at least `0.5`)
+- `MCP_CONFIRM_DELETES` (`off` default, `ask`, `require`): elicit user confirmation for deletes
 
 ## Local dev workflow
 
@@ -119,3 +120,7 @@ Optional/defaulted:
   successful DELETE answers 200 with an empty body (use `JoplinClient.delete`, never
   `request_json`); `/notes` ignores a `parent_id` query, so list a folder's notes via
   `/folders/{id}/notes`. Mocks must mirror the real API: a wrong mock hides a real bug.
+- Delete confirmations (`confirm.py`) use the SDK's `Resolve(...)` parameters: each delete tool
+  takes a `confirmation` argument filled by a module-level resolver, not by the model, and calls
+  `require_confirmed` before deleting. Resolvers must be module-level with runtime-resolvable
+  annotations (the SDK uses `get_type_hints`). A new destructive tool should take one too.
